@@ -1,6 +1,7 @@
 package com.depwatch.scan.parser;
 
 import com.depwatch.scan.graph.DependencyGraph;
+import com.depwatch.scan.graph.DependencyNode;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -31,7 +32,7 @@ class NpmLockfileParserTest {
                 """;
         DependencyGraph g = parser.parse(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
 
-        assertThat(g.nodes()).extracting("id")
+        assertThat(g.nodes()).extracting(DependencyNode::id)
                 .containsExactlyInAnyOrder("npm:a@1.0.0", "npm:b@1.5.0", "npm:b@2.0.0", "npm:jest@29.0.0");
 
         // 直接依赖
@@ -64,7 +65,7 @@ class NpmLockfileParserTest {
                 }
                 """;
         DependencyGraph g = parser.parse(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
-        assertThat(g.nodes()).extracting("name").containsExactly("@scope/pkg");
+        assertThat(g.nodes()).extracting(DependencyNode::name).containsExactly("@scope/pkg");
         assertThat(g.warnings()).anyMatch(w -> w.contains("workspace link"));
     }
 

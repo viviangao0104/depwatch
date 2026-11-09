@@ -1,6 +1,7 @@
 package com.depwatch.scan.parser;
 
 import com.depwatch.scan.graph.DependencyGraph;
+import com.depwatch.scan.graph.DependencyNode;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -37,7 +38,7 @@ class MavenPomParserTest {
                 """;
         DependencyGraph g = parser.parse(new ByteArrayInputStream(pom.getBytes(StandardCharsets.UTF_8)));
 
-        assertThat(g.nodes()).extracting("id").containsExactlyInAnyOrder(
+        assertThat(g.nodes()).extracting(DependencyNode::id).containsExactlyInAnyOrder(
                 "Maven:com.fasterxml.jackson.core:jackson-databind@2.17.2",
                 "Maven:com.google.guava:guava@33.0.0-jre",            // 嵌套占位符
                 "Maven:org.apache.commons:commons-lang3@3.14.0",       // 来自 dependencyManagement
