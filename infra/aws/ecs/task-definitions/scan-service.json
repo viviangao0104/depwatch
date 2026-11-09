@@ -1,0 +1,53 @@
+{
+  "family": "depwatch-scan-service",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "runtimePlatform": { "cpuArchitecture": "ARM64", "operatingSystemFamily": "LINUX" },
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/depwatch-ecs-execution",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/depwatch-scan-service-task",
+  "containerDefinitions": [
+    {
+      "name": "scan-service",
+      "image": "<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/depwatch/scan-service:latest",
+      "essential": true,
+      "portMappings": [{ "name": "http", "containerPort": 8082, "protocol": "tcp", "appProtocol": "http" }],
+      "environment": [
+        { "name": "SPRING_PROFILES_ACTIVE", "value": "prod" },
+        { "name": "SPRING_DATASOURCE_URL", "value": "jdbc:postgresql://<RDS_ENDPOINT>:5432/depwatch_scan" },
+        { "name": "SPRING_DATASOURCE_USERNAME", "value": "depwatch" },
+        { "name": "SPRING_DATA_REDIS_HOST", "value": "<ELASTICACHE_ENDPOINT>" },
+        { "name": "SPRING_KAFKA_BOOTSTRAP_SERVERS", "value": "<MSK_BOOTSTRAP>" },
+        { "name": "SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL", "value": "SASL_SSL" },
+        { "name": "SPRING_KAFKA_PROPERTIES_SASL_MECHANISM", "value": "AWS_MSK_IAM" },
+        { "name": "SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG", "value": "software.amazon.msk.auth.iam.IAMLoginModule required;" },
+        { "name": "SPRING_KAFKA_PROPERTIES_SASL_CLIENT_CALLBACK_HANDLER_CLASS", "value": "software.amazon.msk.auth.iam.IAMClientCallbackHandler" },
+        { "name": "DEPWATCH_STORAGE_TYPE", "value": "s3" },
+        { "name": "DEPWATCH_S3_BUCKET", "value": "depwatch-manifests-<ACCOUNT_ID>" },
+        { "name": "AWS_REGION", "value": "<REGION>" },
+        { "name": "JAVA_TOOL_OPTIONS", "value": "-XX:MaxRAMPercentage=75" }
+      ],
+      "secrets": [
+        { "name": "SPRING_DATASOURCE_PASSWORD", "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:depwatch/db-password" },
+        { "name": "DEPWATCH_JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:depwatch/jwt-secret" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -fs http://localhost:8082/actuator/health/liveness || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/depwatch/scan-service",
+          "awslogs-region": "<REGION>",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

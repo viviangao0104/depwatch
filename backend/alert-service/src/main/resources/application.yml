@@ -1,0 +1,55 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: alert-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/depwatch_alert}
+    username: ${SPRING_DATASOURCE_USERNAME:depwatch}
+    password: ${SPRING_DATASOURCE_PASSWORD:depwatch}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    consumer:
+      group-id: alert-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: com.depwatch.common.events
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    listener:
+      ack-mode: record
+      concurrency: 2
+
+depwatch:
+  storage:
+    type: local      # alert-service 不用存储，但 common 自动配置需要一个值
+  webhook:
+    connect-timeout-ms: 3000
+    read-timeout-ms: 5000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.depwatch: INFO

@@ -1,0 +1,114 @@
+name: CI / CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write          # OIDC 换 AWS 临时凭证，不存长期 key
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  backend:
+    name: Backend build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - name: Build & test
+        working-directory: backend
+        run: mvn -B -ntp verify
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: backend/*/target/surefire-reports/
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+  deploy:
+    name: Deploy to AWS
+    needs: [backend, frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build & push images
+        env:
+          ECR: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          for m in gateway project-service scan-service alert-service; do
+            docker buildx build --platform linux/arm64 --build-arg MODULE=$m \
+              -t $ECR/depwatch/$m:${TAG::7} -t $ECR/depwatch/$m:latest \
+              --cache-from type=gha,scope=$m --cache-to type=gha,scope=$m,mode=max \
+              --push backend/
+          done
+
+      - name: Roll out on EC2 via SSM (no SSH keys in CI)
+        env:
+          TAG: ${{ github.sha }}
+        run: |
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name AWS-RunShellScript \
+            --comment "depwatch deploy ${TAG::7}" \
+            --parameters commands="[
+              'cd /opt/depwatch',
+              'sed -i \"s#^TAG=.*#TAG=${TAG::7}#\" .env || echo TAG=${TAG::7} >> .env',
+              'aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}',
+              'docker compose -f docker-compose.prod.yml pull',
+              'docker compose -f docker-compose.prod.yml up -d --remove-orphans',
+              'docker image prune -f'
+            ]" \
+            --output text --query Command.CommandId
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+
+      - name: Publish frontend
+        run: |
+          aws s3 sync dist/ s3://${{ secrets.FRONTEND_BUCKET }} --delete
+          aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_ID }} --paths "/*"

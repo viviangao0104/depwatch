@@ -1,0 +1,16 @@
+com.example:legacy-service:jar:1.0.0
++- org.springframework.boot:spring-boot-starter-web:jar:2.5.0:compile
+|  +- org.springframework.boot:spring-boot-starter:jar:2.5.0:compile
+|  |  \- org.yaml:snakeyaml:jar:1.28:compile
+|  +- org.springframework.boot:spring-boot-starter-json:jar:2.5.0:compile
+|  |  \- com.fasterxml.jackson.core:jackson-databind:jar:2.12.3:compile
+|  |     \- com.fasterxml.jackson.core:jackson-core:jar:2.12.3:compile
+|  +- org.springframework.boot:spring-boot-starter-tomcat:jar:2.5.0:compile
+|  |  \- org.apache.tomcat.embed:tomcat-embed-core:jar:9.0.46:compile
+|  \- org.springframework:spring-webmvc:jar:5.3.7:compile
+|     \- org.springframework:spring-web:jar:5.3.7:compile
++- org.apache.logging.log4j:log4j-core:jar:2.14.1:compile
+|  \- org.apache.logging.log4j:log4j-api:jar:2.14.1:compile
++- commons-io:commons-io:jar:2.6:compile
++- com.google.guava:guava:jar:29.0-jre:compile
+\- org.postgresql:postgresql:jar:42.2.20:runtime

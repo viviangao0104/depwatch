@@ -1,0 +1,30 @@
+# Java / Maven
+backend/**/target/
+*.class
+*.jar
+!.mvn/wrapper/*.jar
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Local data
+data/
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Terraform
+infra/aws/terraform/.terraform/
+infra/aws/terraform/*.tfstate
+infra/aws/terraform/*.tfstate.backup
+infra/aws/terraform/terraform.tfvars
+infra/aws/terraform/.terraform.lock.hcl
+
+# Secrets
+.env
+*.pem

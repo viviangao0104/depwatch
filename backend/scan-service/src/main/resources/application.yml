@@ -1,0 +1,116 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: scan-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/depwatch_scan}
+    username: ${SPRING_DATASOURCE_USERNAME:depwatch}
+    password: ${SPRING_DATASOURCE_PASSWORD:depwatch}
+    hikari:
+      maximum-pool-size: 10
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.jdbc.batch_size: 100          # 依赖节点/边批量插入
+      hibernate.order_inserts: true
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: 6379
+  cache:
+    type: redis
+    redis:
+      time-to-live: 24h
+      key-prefix: "depwatch:scan:"
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    consumer:
+      group-id: scan-service
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: com.depwatch.common.events
+        max.poll.interval.ms: 600000        # 一次扫描可能要几分钟，避免被踢出消费组
+        max.poll.records: 1
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+    listener:
+      ack-mode: record                      # 每条处理完手动/自动提交 offset
+      concurrency: 3
+
+depwatch:
+  storage:
+    type: ${DEPWATCH_STORAGE_TYPE:local}
+    local:
+      root: ${DEPWATCH_STORAGE_LOCAL_ROOT:./data/manifests}
+    s3:
+      bucket: ${DEPWATCH_S3_BUCKET:}
+      prefix: manifests
+      region: ${AWS_REGION:us-east-1}
+  osv:
+    base-url: https://api.osv.dev
+    batch-size: 1000                        # OSV querybatch 上限
+    connect-timeout-ms: 5000
+    read-timeout-ms: 30000
+  rescan:
+    enabled: true
+    cron: "0 0 3 * * *"                     # 每天 03:00
+    lock-at-most-for: PT2H
+
+resilience4j:
+  ratelimiter:
+    instances:
+      osv:
+        limit-for-period: 20                # 每秒最多 20 次请求
+        limit-refresh-period: 1s
+        timeout-duration: 30s               # 拿不到令牌最多等 30s
+  retry:
+    instances:
+      osv:
+        max-attempts: 4
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - org.springframework.web.client.HttpServerErrorException
+          - org.springframework.web.client.ResourceAccessException
+        ignore-exceptions:
+          - org.springframework.web.client.HttpClientErrorException
+  circuitbreaker:
+    instances:
+      osv:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        ignore-exceptions:
+          - org.springframework.web.client.HttpClientErrorException
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,circuitbreakers,ratelimiters
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.depwatch: INFO

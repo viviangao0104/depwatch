@@ -1,0 +1,129 @@
+# 生产（单机 EC2）编排：镜像来自 ECR，manifest 存 S3，不暴露内部端口。
+#   export ECR=123456789012.dkr.ecr.us-east-1.amazonaws.com
+#   export DEPWATCH_JWT_SECRET=$(openssl rand -base64 48)
+#   export DEPWATCH_S3_BUCKET=depwatch-manifests-123456789012
+#   docker compose -f docker-compose.prod.yml up -d
+
+name: depwatch
+
+x-java-common: &java-common
+  restart: always
+  logging:
+    driver: awslogs            # 日志直接进 CloudWatch（EC2 role 已授权）
+    options:
+      awslogs-region: ${AWS_REGION:-us-east-1}
+      awslogs-group: /depwatch/app
+      awslogs-create-group: "true"
+  environment: &java-env
+    SPRING_PROFILES_ACTIVE: prod
+    SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    SPRING_DATA_REDIS_HOST: redis
+    DEPWATCH_JWT_SECRET: ${DEPWATCH_JWT_SECRET:?set DEPWATCH_JWT_SECRET}
+    DEPWATCH_STORAGE_TYPE: s3
+    DEPWATCH_S3_BUCKET: ${DEPWATCH_S3_BUCKET:?set DEPWATCH_S3_BUCKET}
+    AWS_REGION: ${AWS_REGION:-us-east-1}
+    JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70 -XX:+UseSerialGC
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    kafka: { condition: service_healthy }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: depwatch
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-depwatch}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U depwatch"]
+      interval: 10s
+      retries: 10
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.8.1
+    restart: always
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_RETENTION_HOURS: 72
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xmx512m -Xms256m
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 15s
+      retries: 15
+      start_period: 30s
+
+  gateway:
+    <<: *java-common
+    image: ${ECR:?set ECR}/depwatch/gateway:${TAG:-latest}
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *java-env
+      DEPWATCH_ROUTES_PROJECT: http://project-service:8081
+      DEPWATCH_ROUTES_SCAN: http://scan-service:8082
+      DEPWATCH_ROUTES_ALERT: http://alert-service:8083
+      DEPWATCH_ROUTES_ALERT_WS: ws://alert-service:8083
+      DEPWATCH_CORS_ORIGINS: ${DEPWATCH_CORS_ORIGINS:-https://example.cloudfront.net}
+
+  project-service:
+    <<: *java-common
+    image: ${ECR}/depwatch/project-service:${TAG:-latest}
+    environment:
+      <<: *java-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/depwatch_project
+      SPRING_DATASOURCE_USERNAME: depwatch
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-depwatch}
+
+  scan-service:
+    <<: *java-common
+    image: ${ECR}/depwatch/scan-service:${TAG:-latest}
+    environment:
+      <<: *java-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/depwatch_scan
+      SPRING_DATASOURCE_USERNAME: depwatch
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-depwatch}
+
+  alert-service:
+    <<: *java-common
+    image: ${ECR}/depwatch/alert-service:${TAG:-latest}
+    environment:
+      <<: *java-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/depwatch_alert
+      SPRING_DATASOURCE_USERNAME: depwatch
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-depwatch}
+
+volumes:
+  pgdata:
+  kafkadata:

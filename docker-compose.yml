@@ -1,0 +1,167 @@
+# 本地一键启动完整拓扑：
+#   docker compose up -d --build
+#   前端 http://localhost:3000   网关 http://localhost:8080   Kafka UI http://localhost:8090
+#
+# 只起基础设施（本机用 IDE 跑 Java 服务时）：
+#   docker compose up -d postgres redis kafka kafka-ui
+
+name: depwatch
+
+x-java-common: &java-common
+  restart: unless-stopped
+  environment: &java-env
+    SPRING_PROFILES_ACTIVE: docker
+    SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    SPRING_DATA_REDIS_HOST: redis
+    DEPWATCH_JWT_SECRET: ${DEPWATCH_JWT_SECRET:-change-me-in-prod-this-must-be-at-least-32-bytes-long}
+    DEPWATCH_STORAGE_TYPE: local
+    DEPWATCH_STORAGE_LOCAL_ROOT: /data/manifests
+    JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+
+services:
+  # ───────────────────────── 基础设施 ─────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: depwatch
+      POSTGRES_PASSWORD: depwatch
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U depwatch"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  kafka:
+    # 单节点 KRaft 模式（无 ZooKeeper）
+    image: apache/kafka:3.8.1
+    ports:
+      - "9094:9094"          # 宿主机访问用 localhost:9094
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ───────────────────────── 应用服务 ─────────────────────────
+  gateway:
+    <<: *java-common
+    build:
+      context: ./backend
+      args: { MODULE: gateway }
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *java-env
+      DEPWATCH_ROUTES_PROJECT: http://project-service:8081
+      DEPWATCH_ROUTES_SCAN: http://scan-service:8082
+      DEPWATCH_ROUTES_ALERT: http://alert-service:8083
+      DEPWATCH_CORS_ORIGINS: http://localhost:3000,http://localhost:5173
+
+  project-service:
+    <<: *java-common
+    build:
+      context: ./backend
+      args: { MODULE: project-service }
+    ports:
+      - "8081:8081"
+    environment:
+      <<: *java-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/depwatch_project
+      SPRING_DATASOURCE_USERNAME: depwatch
+      SPRING_DATASOURCE_PASSWORD: depwatch
+    volumes:
+      - manifests:/data/manifests
+
+  scan-service:
+    <<: *java-common
+    build:
+      context: ./backend
+      args: { MODULE: scan-service }
+    ports:
+      - "8082:8082"
+    environment:
+      <<: *java-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/depwatch_scan
+      SPRING_DATASOURCE_USERNAME: depwatch
+      SPRING_DATASOURCE_PASSWORD: depwatch
+    volumes:
+      - manifests:/data/manifests
+
+  alert-service:
+    <<: *java-common
+    build:
+      context: ./backend
+      args: { MODULE: alert-service }
+    ports:
+      - "8083:8083"
+    environment:
+      <<: *java-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/depwatch_alert
+      SPRING_DATASOURCE_USERNAME: depwatch
+      SPRING_DATASOURCE_PASSWORD: depwatch
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  manifests:
