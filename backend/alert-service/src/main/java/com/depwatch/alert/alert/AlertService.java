@@ -39,14 +39,14 @@ public class AlertService {
         this.webhook = webhook;
     }
 
-    // ───────────── 事件入口 ─────────────
+    // ───────────── event entry points ─────────────
 
     @Transactional
     public void onVulnerabilityDetected(VulnerabilityDetectedEvent e) {
         if (!idempotency.markProcessed(e.eventId(), "VulnerabilityDetected")) return;
 
         AlertRule rule = rules.findById(e.userId()).orElseGet(() -> AlertRule.defaults(e.userId()));
-        if (!e.severity().atLeast(rule.getMinSeverity())) return;      // 低于用户阈值，不打扰
+        if (!e.severity().atLeast(rule.getMinSeverity())) return;      // below the user's threshold
 
         String title = "%s %s in %s@%s".formatted(e.severity(), e.vulnId(), e.packageName(), e.version());
         String message = (e.summary() == null ? "" : e.summary())
@@ -65,7 +65,7 @@ public class AlertService {
         AlertRule rule = rules.findById(e.userId()).orElseGet(() -> AlertRule.defaults(e.userId()));
         boolean failed = "FAILED".equals(e.status());
         if (!failed && !rule.isNotifyOnScanComplete()) return;
-        // 定时重扫没有新发现时不打扰用户
+        // a scheduled rescan with nothing new shouldn't bother the user
         if (!failed && "SCHEDULED".equals(e.trigger()) && e.newFindings() == 0) return;
 
         Severity sev = failed ? Severity.UNKNOWN
@@ -86,7 +86,7 @@ public class AlertService {
     }
 
     /**
-     * 推送放在事务提交之后：如果先推了再回滚，用户会看到一条 DB 里不存在的告警。
+      * Push after the transaction commits: pushing first and then rolling back would show the user an alert that isn't in the DB.
      */
     private void deliver(AlertRule rule, Alert alert) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {

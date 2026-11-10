@@ -9,16 +9,16 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 /**
  * STOMP over WebSocket。
  *
- * 端点 /ws 由网关代理（Spring Cloud Gateway 原生支持 WS 升级），JWT 在握手请求的 ?token= 里，
- * 网关校验后才转发到这里。所以本服务不再重复鉴权。
+  * The /ws endpoint is proxied by the gateway (Spring Cloud Gateway supports the WS upgrade natively). The JWT travels
+  * in the handshake's ?token= and the gateway verifies it before forwarding, so this service doesn't re-authenticate.
  *
- * 主题：
- *   /topic/scans/{scanId}        扫描进度（任何知道 scanId 的人都能订阅——scanId 是随机 UUID，可视为能力凭证）
- *   /topic/users/{userId}/alerts  用户告警
+  * Topics:
+  *   /topic/scans/{scanId}        scan progress (anyone who knows the scanId can subscribe — it's a random UUID, treat it as a capability)
+  *   /topic/users/{userId}/alerts  per-user alerts
  *
- * 用的是内存 SimpleBroker：多实例部署时各实例只知道自己连接上的客户端，
- * 生产环境换成 enableStompBrokerRelay() 接 RabbitMQ/ActiveMQ，或者用 Redis Pub/Sub 做扇出。
- * 这是单机 → 多机的经典取舍，面试可讲。
+  * Uses the in-memory SimpleBroker: with multiple replicas each one only knows its own connected clients.
+  * In production switch to enableStompBrokerRelay() with RabbitMQ/ActiveMQ, or fan out via Redis Pub/Sub.
+  * Classic single-node → multi-node trade-off; good interview material.
  */
 @Configuration
 @EnableWebSocketMessageBroker

@@ -16,9 +16,9 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * 依赖图的持久化用 JdbcTemplate 批量写，而不是 JPA。
- * 一个前端项目几千个节点 + 几千条边，JPA 逐个 persist 会慢几十倍（一级缓存膨胀、flush 开销）。
- * 这是"该用 ORM 的地方用 ORM，该用 SQL 的地方用 SQL"的典型例子。
+  * The dependency graph is persisted with JdbcTemplate batch writes rather than JPA.
+  * A frontend project has thousands of nodes and edges; persisting them one by one through JPA is tens of times slower (first-level cache bloat, flush overhead).
+  * A textbook case of "use the ORM where it fits and SQL where it fits".
  */
 @Repository
 public class ScanGraphStore {
@@ -59,7 +59,7 @@ public class ScanGraphStore {
                 });
     }
 
-    /** 定时重扫时把上一次的图原样拷贝到新 scan（不重新解析 manifest）。 */
+    /** For scheduled rescans: copy the previous graph verbatim into the new scan (no manifest re-parse). */
     public void copyGraph(UUID fromScanId, UUID toScanId) {
         jdbc.update("""
                 INSERT INTO scan_dependencies (scan_id, node_id, ecosystem, name, version, direct, depth)

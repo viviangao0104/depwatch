@@ -110,7 +110,7 @@
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <configuration>
-                        <!-- 分层 jar，Docker 构建时缓存依赖层 -->
+                        <!-- Layered jar so Docker can cache the dependency layer -->
                         <layers>
                             <enabled>true</enabled>
                         </layers>

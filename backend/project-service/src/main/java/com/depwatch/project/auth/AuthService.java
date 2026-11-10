@@ -38,7 +38,7 @@ public class AuthService {
     public AuthResponse login(LoginRequest req) {
         User user = users.findByEmailIgnoreCase(req.email())
                 .filter(u -> encoder.matches(req.password(), u.getPasswordHash()))
-                // 统一错误信息，不暴露"邮箱不存在"还是"密码错"
+                // Same message either way — don't reveal whether the email exists or the password was wrong
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
         return new AuthResponse(jwt.issue(user), jwt.ttlSeconds(), UserInfo.from(user));
     }

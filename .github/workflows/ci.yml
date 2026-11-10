@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write          # OIDC 换 AWS 临时凭证，不存长期 key
+  id-token: write          # OIDC for short-lived AWS credentials; no long-lived keys stored
 
 env:
   AWS_REGION: us-east-1
@@ -56,7 +56,7 @@ jobs:
   deploy:
     name: Deploy to AWS
     needs: [backend, frontend]
-    # 只有在仓库 Settings → Variables 里把 DEPLOY_ENABLED 设为 true 后才会执行（AWS 配好之后再开）
+    # Runs only after the repository variable DEPLOY_ENABLED is set to true (Settings → Variables), i.e. once AWS is configured
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:

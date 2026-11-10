@@ -15,7 +15,7 @@ export default function Layout() {
     api.unreadCount().then((r) => setUnread(r.unread)).catch(() => {})
   }, [nav])
 
-  // 用户级告警实时推送：角标 +1 并弹 toast
+  // Live per-user alerts: bump the badge and show a toast
   useEffect(() => {
     if (!user) return
     return live.subscribe<Alert>(`/topic/users/${user.id}/alerts`, (a) => {

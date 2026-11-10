@@ -14,12 +14,12 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 轮询 outbox，把事件搬到 Kafka。
+  * Polls the outbox and ships events to Kafka.
  *
- * 保证：at-least-once。极端情况（Kafka ack 了但 DB 更新 published_at 失败）会重发，
- * 所以消费端必须幂等——scan-service 用 scanId 主键，alert-service 用 eventId 去重表。
+  * Guarantee: at-least-once. In the edge case where Kafka acks but updating published_at fails, the event is re-sent,
+  * so consumers must be idempotent — scan-service via the scanId primary key, alert-service via an eventId dedup table.
  *
- * 进阶替代：Debezium 读 Postgres WAL 做 CDC，零轮询、更低延迟，但多一套组件。
+  * Advanced alternative: Debezium CDC on the Postgres WAL — no polling, lower latency, one more component.
  */
 @Component
 public class OutboxPublisher {
@@ -52,10 +52,10 @@ public class OutboxPublisher {
 
         for (OutboxEvent e : batch) {
             try {
-                // 反序列化成真实事件类型再发送，这样 JsonSerializer 会写入 __TypeId__ 头，消费端能直接拿到类型
+                // Deserialize into the real event type before sending so JsonSerializer writes the __TypeId__ header and consumers get the type
                 Class<?> type = Class.forName(e.getEventType());
                 Object event = mapper.readValue(e.getPayload(), type);
-                // 同步等待 ack（acks=all），确保 Kafka 真的收到了才标记已发布
+                // Wait synchronously for the ack (acks=all) so we only mark published once Kafka really has it
                 kafka.send(e.getTopic(), e.getPartitionKey(), event).get(10, TimeUnit.SECONDS);
                 e.markPublished();
             } catch (Exception ex) {

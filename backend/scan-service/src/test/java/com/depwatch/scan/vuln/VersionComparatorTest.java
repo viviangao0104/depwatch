@@ -10,9 +10,9 @@ class VersionComparatorTest {
     @ParameterizedTest
     @CsvSource({
             "1.0.0, 1.0.1",
-            "1.9.0, 1.10.0",          // 数值比较而不是字符串
+            "1.9.0, 1.10.0",          // numeric, not lexicographic
             "4.17.15, 4.17.21",
-            "1.0.0-rc1, 1.0.0",       // 预发布 < 正式
+            "1.0.0-rc1, 1.0.0",       // pre-release < release
             "1.0.0-alpha, 1.0.0-beta",
             "2.17.0, 2.17.1",
             "5.3.30, 6.0.0",

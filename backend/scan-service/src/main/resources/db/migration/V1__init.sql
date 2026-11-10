@@ -1,5 +1,5 @@
 CREATE TABLE scans (
-    id                  UUID PRIMARY KEY,                 -- 来自事件的 scanId，天然幂等键
+    id                  UUID PRIMARY KEY,                 -- scanId from the event; a natural idempotency key
     project_id          UUID         NOT NULL,
     project_name        VARCHAR(120) NOT NULL,
     user_id             UUID         NOT NULL,
@@ -24,7 +24,7 @@ CREATE TABLE scans (
 CREATE INDEX idx_scans_project ON scans (project_id, started_at DESC);
 CREATE INDEX idx_scans_user ON scans (user_id, started_at DESC);
 
--- 依赖图节点。node_id = "<ecosystem>:<name>@<version>"
+-- Dependency graph nodes. node_id = "<ecosystem>:<name>@<version>"
 CREATE TABLE scan_dependencies (
     id        BIGSERIAL PRIMARY KEY,
     scan_id   UUID         NOT NULL REFERENCES scans (id) ON DELETE CASCADE,
@@ -37,7 +37,7 @@ CREATE TABLE scan_dependencies (
     CONSTRAINT uq_scan_dep UNIQUE (scan_id, node_id)
 );
 
--- 依赖图边（邻接表）。路径按需 BFS。
+-- Dependency graph edges (adjacency list). Paths are computed on demand with BFS.
 CREATE TABLE scan_edges (
     scan_id        UUID         NOT NULL REFERENCES scans (id) ON DELETE CASCADE,
     parent_node_id VARCHAR(512) NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE scan_edges (
 );
 CREATE INDEX idx_scan_edges_child ON scan_edges (scan_id, child_node_id);
 
--- OSV 漏洞详情的本地副本
+-- Local copy of OSV vulnerability details
 CREATE TABLE vulnerabilities (
     id           VARCHAR(60) PRIMARY KEY,                 -- OSV id: GHSA-xxxx / CVE-xxxx / ...
     summary      VARCHAR(1000),
@@ -73,7 +73,7 @@ CREATE TABLE scan_findings (
 );
 CREATE INDEX idx_findings_scan ON scan_findings (scan_id);
 
--- ShedLock 分布式锁表
+-- ShedLock distributed-lock table
 CREATE TABLE shedlock (
     name       VARCHAR(64)  NOT NULL PRIMARY KEY,
     lock_until TIMESTAMP    NOT NULL,

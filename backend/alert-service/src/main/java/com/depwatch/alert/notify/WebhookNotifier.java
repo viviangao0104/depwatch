@@ -17,11 +17,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Slack 兼容的 Incoming Webhook（Discord / 飞书 / 钉钉的格式略有差异，可在此扩展）。
- * @Async：外部 HTTP 调用不能阻塞 Kafka 消费线程。
+  * Slack-compatible Incoming Webhook (Discord / Feishu / DingTalk differ slightly; extend here).
+  * @Async: an outbound HTTP call must not block the Kafka consumer thread.
  *
- * SSRF 防护：用户填的 URL 只允许 https，且拒绝内网地址——否则攻击者可以让我们的服务去请求
- * 169.254.169.254（云厂商元数据接口）之类的地址。
+  * SSRF protection: user-supplied URLs must be https and must not point at private networks — otherwise an
+  * attacker could make this service call 169.254.169.254 (cloud metadata endpoint) and the like.
  */
 @Component
 public class WebhookNotifier {

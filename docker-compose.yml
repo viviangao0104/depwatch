@@ -1,8 +1,8 @@
-# 本地一键启动完整拓扑：
+# Full local topology in one command:
 #   docker compose up -d --build
-#   前端 http://localhost:3000   网关 http://localhost:8080   Kafka UI http://localhost:8090
+#   frontend http://localhost:3000   gateway http://localhost:8080   Kafka UI http://localhost:8090
 #
-# 只起基础设施（本机用 IDE 跑 Java 服务时）：
+# Infrastructure only (when running the Java services from an IDE):
 #   docker compose up -d postgres redis kafka kafka-ui
 
 name: depwatch
@@ -26,7 +26,7 @@ x-java-common: &java-common
       condition: service_healthy
 
 services:
-  # ───────────────────────── 基础设施 ─────────────────────────
+  # ───────────────────────── infrastructure ─────────────────────────
   postgres:
     image: postgres:16-alpine
     environment:
@@ -56,10 +56,10 @@ services:
       retries: 10
 
   kafka:
-    # 单节点 KRaft 模式（无 ZooKeeper）
+    # single-node KRaft mode (no ZooKeeper)
     image: apache/kafka:3.8.1
     ports:
-      - "9094:9094"          # 宿主机访问用 localhost:9094
+      - "9094:9094"          # host access via localhost:9094
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -95,7 +95,7 @@ services:
       kafka:
         condition: service_healthy
 
-  # ───────────────────────── 应用服务 ─────────────────────────
+  # ───────────────────────── application services ─────────────────────────
   gateway:
     <<: *java-common
     build:

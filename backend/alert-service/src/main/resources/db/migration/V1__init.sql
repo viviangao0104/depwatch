@@ -24,11 +24,11 @@ CREATE TABLE alert_rules (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 消费幂等：Kafka at-least-once，重复投递的事件在这里被识别并跳过
+-- Consumer idempotency: Kafka is at-least-once; redelivered events are recognised here and skipped
 CREATE TABLE processed_events (
     event_id     UUID PRIMARY KEY,
     event_type   VARCHAR(100) NOT NULL,
     processed_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
--- 定期清理（> 7 天）即可，见 ProcessedEventCleanup
+-- Periodic cleanup (> 7 days) is enough; see IdempotencyGuard.cleanup()
 CREATE INDEX idx_processed_events_time ON processed_events (processed_at);

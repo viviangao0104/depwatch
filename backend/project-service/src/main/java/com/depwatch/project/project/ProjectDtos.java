@@ -31,7 +31,7 @@ public final class ProjectDtos {
         }
     }
 
-    /** 上传后立即返回 scanId，前端据此订阅 WebSocket 进度。 */
+    /** Returned immediately after upload; the frontend uses scanId to subscribe to WebSocket progress. */
     public record UploadResponse(UUID manifestId, UUID scanId, String manifestType) {
     }
 }

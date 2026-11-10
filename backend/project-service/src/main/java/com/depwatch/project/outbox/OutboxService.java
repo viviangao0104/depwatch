@@ -9,8 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 /**
- * 业务代码只调 append()，必须在调用方的事务内执行（MANDATORY），
- * 保证"业务数据 + 事件"要么一起提交，要么一起回滚。
+  * Business code only calls append(); it must run inside the caller's transaction (MANDATORY)
+  * so that "business data + event" commit together or roll back together.
  */
 @Service
 public class OutboxService {

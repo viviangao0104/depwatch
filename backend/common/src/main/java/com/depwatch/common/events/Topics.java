@@ -1,7 +1,7 @@
 package com.depwatch.common.events;
 
 /**
- * Kafka topic 名称集中定义，避免各服务手写字符串拼错。
+  * Kafka topic names in one place so services don't hand-type (and mistype) strings.
  */
 public final class Topics {
     public static final String SCAN_REQUESTED = "scan.requested";

@@ -29,7 +29,7 @@ export default function ProjectDetailPage() {
     setError(null)
     try {
       const res = await api.upload(id, file)
-      setActiveScan(res.scanId)        // 立刻订阅进度，此时 scan-service 可能还没收到事件
+      setActiveScan(res.scanId)        // subscribe to progress right away; scan-service may not have received the event yet
       await load()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Upload failed')

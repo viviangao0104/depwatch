@@ -17,7 +17,7 @@ class NpmLockfileParserTest {
 
     @Test
     void parsesV3LockfileWithNestedVersionConflict() throws Exception {
-        // app 依赖 a@1 和 b@2；a 依赖 b@1 → b@1 被嵌套安装在 a 下面
+        // app depends on a@1 and b@2; a depends on b@1 → b@1 is nested under a
         String json = """
                 {
                   "name": "app", "lockfileVersion": 3,
@@ -35,9 +35,9 @@ class NpmLockfileParserTest {
         assertThat(g.nodes()).extracting(DependencyNode::id)
                 .containsExactlyInAnyOrder("npm:a@1.0.0", "npm:b@1.5.0", "npm:b@2.0.0", "npm:jest@29.0.0");
 
-        // 直接依赖
+        // direct dependencies
         assertThat(g.childrenOf(DependencyGraph.ROOT_ID)).containsExactlyInAnyOrder("npm:a@1.0.0", "npm:b@2.0.0", "npm:jest@29.0.0");
-        // a 依赖的是嵌套的 b@1.5.0，不是顶层的 b@2.0.0 —— 这就是 Node 模块解析规则
+        // a depends on the nested b@1.5.0, not the top-level b@2.0.0 — that's Node's module resolution rule
         assertThat(g.childrenOf("npm:a@1.0.0")).containsExactly("npm:b@1.5.0");
 
         Map<String, Integer> depths = g.depths();

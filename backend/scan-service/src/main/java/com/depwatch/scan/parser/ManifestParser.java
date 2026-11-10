@@ -6,12 +6,12 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * 策略接口：每种 manifest 格式一个实现，Spring 自动收集成 List 注入 ManifestParserRegistry。
- * 加新格式（requirements.txt / go.sum / Cargo.lock）只需新增一个实现类。
+  * Strategy interface: one implementation per manifest format; Spring collects them into a List for ManifestParserRegistry.
+  * Adding a format (requirements.txt / go.sum / Cargo.lock) is one new class.
  */
 public interface ManifestParser {
 
-    /** 这个解析器处理的类型名，与 project-service 的 ManifestType 对应。 */
+    /** Type name handled by this parser; matches ManifestType in project-service. */
     String type();
 
     boolean supports(String fileName);

@@ -15,8 +15,8 @@ public interface OutboxRepository extends JpaRepository<OutboxEvent, UUID> {
 
     /**
      * SELECT ... FOR UPDATE SKIP LOCKED：
-     * 多个 project-service 实例同时轮询时，各自拿到不同的行，互不阻塞也不重复发送。
-     * Hibernate 对 Postgres 会把 PESSIMISTIC_WRITE + SKIP_LOCKED 翻译成这条 SQL。
+      * When several project-service instances poll at once, each locks different rows — no blocking, no duplicate sends.
+      * On Postgres, Hibernate translates PESSIMISTIC_WRITE + SKIP_LOCKED into exactly that SQL.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2")) // -2 = SKIP LOCKED

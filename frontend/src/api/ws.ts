@@ -2,8 +2,8 @@ import { Client, type IMessage, type StompSubscription } from '@stomp/stompjs'
 import { auth } from './client'
 
 /**
- * 单例 STOMP 连接。token 通过 ?token= 传给网关（浏览器 WebSocket API 不支持自定义 header）。
- * 自动重连由 stompjs 处理（reconnectDelay）。
+  * Singleton STOMP connection. The token goes to the gateway via ?token= (the browser WebSocket API can't set headers).
+  * Reconnection is handled by stompjs (reconnectDelay).
  */
 class LiveClient {
   private client: Client | null = null

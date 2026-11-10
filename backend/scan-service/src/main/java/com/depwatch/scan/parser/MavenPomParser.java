@@ -19,15 +19,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 解析 pom.xml —— 只能拿到直接依赖。
+  * Parses pom.xml — direct dependencies only.
  *
- * 真正的传递依赖需要下载所有父 POM / BOM 并执行 Maven 的版本仲裁，等于重写半个 Maven，
- * 所以对 pom.xml 我们只做直接依赖，并提示用户上传 `mvn dependency:tree` 输出。
+  * Real transitive resolution needs every parent POM / BOM downloaded plus Maven's version mediation — half of Maven rewritten —
+  * so for pom.xml we only do direct dependencies and tell the user to upload `mvn dependency:tree` output instead.
  *
- * 要处理的细节：
- *  - ${property} 占位符（<properties> 里定义的、${project.version} 等内置的）
- *  - <dependencyManagement> 里统一声明的版本
- *  - XXE 防护：用户上传的 XML 一律禁用 DTD 和外部实体
+  * Details handled:
+  *  - ${property} placeholders (from <properties> and built-ins like ${project.version})
+  *  - versions declared centrally in <dependencyManagement>
+  *  - XXE protection: DTDs and external entities are disabled for all user-uploaded XML
  */
 @Component
 public class MavenPomParser implements ManifestParser {
@@ -95,7 +95,7 @@ public class MavenPomParser implements ManifestParser {
             if (v == null) v = managed.get(g + ":" + a);
             if (v == null || v.contains("${")) {
                 unresolved++;
-                continue;   // 版本由父 POM / BOM 管理，无法离线解析
+                continue;   // version managed by a parent POM / BOM; can't be resolved offline
             }
             DependencyNode node = DependencyNode.maven(g, a, v);
             graph.addNode(node);
@@ -136,7 +136,7 @@ public class MavenPomParser implements ManifestParser {
         return props;
     }
 
-    /** 递归展开 ${...}，最多 5 层防止循环引用。 */
+    /** Recursively expands ${...}, at most 5 levels deep to guard against cycles. */
     static String resolve(String value, Map<String, String> props) {
         if (value == null) return null;
         String cur = value;

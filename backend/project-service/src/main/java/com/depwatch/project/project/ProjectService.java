@@ -69,7 +69,7 @@ public class ProjectService {
     @Transactional
     public void delete(UUID id) {
         Project p = owned(id);
-        // 先删存储文件（best effort），再删 DB（manifests 级联）
+        // Delete stored files first (best effort), then the DB rows (manifests cascade)
         manifests.findByProjectIdOrderByUploadedAtDesc(id).forEach(m -> {
             try {
                 storage.delete(m.getStorageKey());
@@ -87,10 +87,10 @@ public class ProjectService {
     }
 
     /**
-     * 上传 manifest 并请求扫描。
-     * 文件写入存储 → 同一事务里写 manifests + outbox → 返回 scanId。
-     * 如果事务回滚（比如 DB 挂了），存储里会留下孤儿文件，可以用定时任务清理；
-     * 反过来（DB 成功、文件没写）是不可接受的，所以文件先写。
+      * Uploads a manifest and requests a scan.
+      * Write the file to storage → write manifests + outbox in one transaction → return scanId.
+      * If the transaction rolls back (e.g. DB down) an orphan file is left in storage; a scheduled job can clean those up.
+      * The reverse (DB row without a file) is unacceptable, which is why the file goes first.
      */
     @Transactional
     public UploadResponse upload(UUID projectId, MultipartFile file) {
@@ -112,7 +112,7 @@ public class ProjectService {
 
         ScanRequestedEvent event = ScanRequestedEvent.of(scanId, projectId, project.getName(),
                 project.getOwnerId(), key, file.getOriginalFilename());
-        // key 用 projectId：同一项目的扫描落在同一分区，按序处理
+        // Key by projectId: scans for one project land on one partition and are processed in order
         outbox.append("Project", projectId, Topics.SCAN_REQUESTED, projectId.toString(), event);
 
         log.info("Manifest {} uploaded for project {}, scan {} requested", manifest.getId(), projectId, scanId);

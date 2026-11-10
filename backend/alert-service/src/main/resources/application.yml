@@ -35,7 +35,7 @@ spring:
 
 depwatch:
   storage:
-    type: local      # alert-service 不用存储，但 common 自动配置需要一个值
+    type: local      # alert-service doesn't store files, but the common auto-configuration needs a value
   webhook:
     connect-timeout-ms: 3000
     read-timeout-ms: 5000

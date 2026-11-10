@@ -29,12 +29,12 @@ CREATE TABLE manifests (
 );
 CREATE INDEX idx_manifests_project ON manifests (project_id, uploaded_at DESC);
 
--- Transactional Outbox：事件与业务数据同一事务写入，由后台任务搬运到 Kafka
+-- Transactional Outbox: events are written in the same transaction as business data and shipped to Kafka by a background job
 CREATE TABLE outbox_events (
     id             UUID PRIMARY KEY,
     aggregate_type VARCHAR(60)  NOT NULL,
     aggregate_id   UUID         NOT NULL,
-    event_type     VARCHAR(255) NOT NULL,       -- 事件类全限定名，用于反序列化
+    event_type     VARCHAR(255) NOT NULL,       -- fully qualified event class name, used for deserialization
     topic          VARCHAR(100) NOT NULL,
     partition_key  VARCHAR(100) NOT NULL,
     payload        JSONB        NOT NULL,
@@ -43,5 +43,5 @@ CREATE TABLE outbox_events (
     attempts       INT          NOT NULL DEFAULT 0,
     last_error     VARCHAR(1000)
 );
--- 只索引未发布的行（部分索引），表越大越划算
+-- Index only unpublished rows (partial index) — pays off more as the table grows
 CREATE INDEX idx_outbox_unpublished ON outbox_events (created_at) WHERE published_at IS NULL;

@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 解析 `mvn dependency:tree` 的文本输出（含完整传递依赖）。
+  * Parses the text output of `mvn dependency:tree` (full transitive dependencies).
  *
  *   com.example:demo:jar:0.0.1-SNAPSHOT
  *   +- org.springframework.boot:spring-boot-starter-web:jar:3.3.5:compile
@@ -22,9 +22,9 @@ import java.util.Locale;
  *   |  \- org.yaml:snakeyaml:jar:2.2:compile
  *   \- org.postgresql:postgresql:jar:42.7.4:runtime
  *
- * 每一层缩进固定 3 个字符（"+- " / "\- " / "|  " / "   "），深度 = 前缀长度 / 3。
- * 用一个按深度索引的栈记录"当前路径"，就能把缩进文本还原成树。
- * 兼容控制台输出里的 "[INFO] " 前缀，以及多模块项目里的多棵树。
+  * Each level is indented by exactly 3 characters ("+- " / "\- " / "|  " / "   "); depth = prefix length / 3.
+  * A stack indexed by depth tracks the "current path", which is enough to rebuild the tree from indented text.
+  * Tolerates the "[INFO] " prefix of console output and the multiple trees of a multi-module build.
  */
 @Component
 public class MavenTreeParser implements ManifestParser {
@@ -43,7 +43,7 @@ public class MavenTreeParser implements ManifestParser {
     @Override
     public DependencyGraph parse(InputStream in) throws IOException {
         DependencyGraph graph = new DependencyGraph();
-        List<String> stack = new ArrayList<>();      // stack.get(d) = 深度 d 的当前节点 id
+        List<String> stack = new ArrayList<>();      // stack.get(d) = current node id at depth d
         boolean sawOmitted = false;
         int parsedLines = 0;
 
@@ -61,7 +61,7 @@ public class MavenTreeParser implements ManifestParser {
                 String coords = line.substring(i).trim();
                 if (coords.isEmpty() || !coords.contains(":")) continue;
 
-                if (coords.contains("omitted for")) {   // -Dverbose 模式下被仲裁掉的版本，并未真正引入
+                if (coords.contains("omitted for")) {   // -Dverbose shows versions lost in mediation; they were never actually pulled in
                     sawOmitted = true;
                     continue;
                 }
@@ -73,7 +73,7 @@ public class MavenTreeParser implements ManifestParser {
                 }
                 parsedLines++;
 
-                if (depth == 0) {                      // 模块根：不是依赖，挂到虚拟 ROOT 下
+                if (depth == 0) {                      // module root: not a dependency, hangs under the virtual ROOT
                     stack.clear();
                     stack.add(DependencyGraph.ROOT_ID);
                     continue;
@@ -82,7 +82,7 @@ public class MavenTreeParser implements ManifestParser {
                 DependencyNode node = DependencyNode.maven(c.groupId, c.artifactId, c.version);
                 graph.addNode(node);
 
-                // 父节点 = 上一层的当前节点；没有根行（用户只贴了子树）时退化为 ROOT
+                // parent = current node one level up; falls back to ROOT when there is no root line (user pasted a subtree)
                 String parent = depth - 1 < stack.size() ? stack.get(depth - 1) : DependencyGraph.ROOT_ID;
                 graph.addEdge(parent, node.id());
 
@@ -114,7 +114,7 @@ public class MavenTreeParser implements ManifestParser {
     }
 
     /**
-     * group:artifact:type[:classifier]:version[:scope] 可能带 " (optional)" 后缀。
+      * group:artifact:type[:classifier]:version[:scope], possibly followed by " (optional)".
      */
     record Coordinate(String groupId, String artifactId, String version) {
         static Coordinate parse(String s) {

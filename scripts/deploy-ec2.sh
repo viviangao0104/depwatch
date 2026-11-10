@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 一键部署到方案 A 的 EC2：构建镜像 → 推 ECR → 同步 compose 文件 → 远程 pull & up → 发布前端
-# 用法：scripts/deploy-ec2.sh ~/.ssh/my-key.pem
+# One-shot deploy to the Option A EC2: build images → push to ECR → sync compose files → remote pull & up → publish frontend
+# Usage: scripts/deploy-ec2.sh ~/.ssh/my-key.pem
 set -euo pipefail
 
 KEY="${1:?usage: deploy-ec2.sh <path-to-ssh-key.pem>}"

@@ -9,7 +9,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.InputStream;
 
 /**
- * S3 实现。凭证走默认链（ECS Task Role / EC2 Instance Profile / 环境变量），代码里不出现 AK/SK。
+  * S3 implementation. Credentials come from the default chain (ECS Task Role / EC2 Instance Profile / env vars) — no access keys in code.
  */
 public class S3ManifestStorage implements ManifestStorage {
 

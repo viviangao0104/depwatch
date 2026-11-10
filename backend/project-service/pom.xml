@@ -38,7 +38,7 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
-        <!-- 只要 BCrypt，不要整个 Spring Security 过滤链（认证由网关做） -->
+        <!-- Only BCrypt — not the whole Spring Security filter chain (authentication happens at the gateway) -->
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>

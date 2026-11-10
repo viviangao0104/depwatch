@@ -4,8 +4,8 @@ import com.depwatch.common.web.ApiException;
 import org.springframework.http.HttpStatus;
 
 /**
- * 请求级别的用户上下文（ThreadLocal）。
- * 网关已经校验过 JWT，并把用户信息放在 X-User-Id / X-User-Email 头里转发给下游。
+  * Request-scoped user context (ThreadLocal).
+  * The gateway has already verified the JWT and forwards the user in the X-User-Id / X-User-Email headers.
  */
 public final class UserContext {
 
@@ -22,7 +22,7 @@ public final class UserContext {
         HOLDER.remove();
     }
 
-    /** 当前用户；未登录时抛 401。 */
+    /** Current user; throws 401 when not authenticated. */
     public static UserPrincipal require() {
         UserPrincipal p = HOLDER.get();
         if (p == null) {

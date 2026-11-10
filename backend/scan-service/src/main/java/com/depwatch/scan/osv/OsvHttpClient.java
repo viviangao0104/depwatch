@@ -17,13 +17,13 @@ import org.springframework.web.client.RestClient;
 import java.time.Duration;
 
 /**
- * 纯 HTTP 层。三个 Resilience4j 注解的生效顺序（外→内）：Retry → CircuitBreaker → RateLimiter。
+  * Pure HTTP layer. The three Resilience4j annotations apply outermost → innermost: Retry → CircuitBreaker → RateLimiter.
  *
- *  - RateLimiter：每秒 20 次，拿不到令牌等待而不是直接失败。OSV 是公共免费 API，要礼貌。
- *  - CircuitBreaker：连续失败率超过 50% 就熔断 30 秒，快速失败，不让线程都卡在等 OSV 超时上。
- *  - Retry：对 5xx / 网络异常指数退避重试 4 次；4xx（比如我们发的请求有问题）不重试。
+  *  - RateLimiter: 20 req/s; wait for a permit instead of failing. OSV is a free public API — be polite.
+  *  - CircuitBreaker: open for 30s once the failure rate exceeds 50%; fail fast instead of parking every thread on an OSV timeout.
+  *  - Retry: up to 4 attempts with exponential backoff on 5xx / network errors; 4xx (our request is wrong) is not retried.
  *
- * 配置都在 application.yml 的 resilience4j.* 下，运行时可通过 /actuator/circuitbreakers 观察状态。
+  * All settings live under resilience4j.* in application.yml; state is observable at /actuator/circuitbreakers.
  */
 @Component
 public class OsvHttpClient {
@@ -57,7 +57,7 @@ public class OsvHttpClient {
                 .body(QueryBatchResponse.class);
     }
 
-    /** 返回原始 JSON 字符串，便于缓存和原样落库。404 返回 null。 */
+    /** Returns the raw JSON string for caching and verbatim persistence. Returns null on 404. */
     @Retry(name = BACKEND)
     @CircuitBreaker(name = BACKEND)
     @RateLimiter(name = BACKEND)

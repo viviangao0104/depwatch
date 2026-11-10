@@ -25,14 +25,14 @@ import reactor.core.publisher.Mono;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 全局 JWT 校验。
+  * Global JWT verification.
  *
- * 1. 公开路径（登录/注册/健康检查）直接放行
- * 2. 其余请求从 Authorization: Bearer 取 token；WebSocket 握手取 ?token=（浏览器 WS API 不能设 header）
- * 3. 校验签名 + 过期 + issuer
- * 4. 把 sub / email 写入 X-User-Id / X-User-Email 转发给下游（客户端带的同名头已被 default-filters 清掉）
+  * 1. Public paths (login / register / health) pass through
+  * 2. Everything else takes the token from Authorization: Bearer; WebSocket handshakes use ?token= (the browser WS API can't set headers)
+  * 3. Verify signature + expiry + issuer
+  * 4. Forward sub / email as X-User-Id / X-User-Email (any client-supplied copies were stripped first)
  *
- * 用户 ID 同时放进 exchange attribute，供限流 KeyResolver 使用。
+  * The user ID is also stored as an exchange attribute for the rate-limiter KeyResolver.
  */
 @Component
 public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
@@ -54,7 +54,7 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
 
     @Override
     public int getOrder() {
-        return -100;   // 在 RequestRateLimiter 之前执行，这样限流才能按用户维度
+        return -100;   // run before RequestRateLimiter so rate limiting can be per user
     }
 
     @Override
@@ -62,7 +62,7 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
         ServerHttpRequest req = exchange.getRequest();
         String path = req.getURI().getPath();
 
-        // 无论公开与否，先剥离客户端自带的身份头——下游无条件信任这两个头
+        // Public or not, strip client-supplied identity headers first — downstream trusts them unconditionally
         ServerHttpRequest stripped = req.mutate()
                 .headers(h -> {
                     h.remove("X-User-Id");

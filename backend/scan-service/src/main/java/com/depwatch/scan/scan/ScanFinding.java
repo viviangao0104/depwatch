@@ -9,7 +9,7 @@ import jakarta.persistence.Table;
 
 import java.util.UUID;
 
-/** 一个 (依赖节点, 漏洞) 组合 = 一条 finding。 */
+/** One (dependency node, vulnerability) pair = one finding. */
 @Entity
 @Table(name = "scan_findings")
 public class ScanFinding {
@@ -51,7 +51,7 @@ public class ScanFinding {
     public String getFixedVersion() { return fixedVersion; }
     public boolean isNew() { return isNew; }
 
-    /** 用于 diff 的身份键：同一个包版本上的同一个漏洞。 */
+    /** Identity key for diffing: the same vulnerability on the same package version. */
     public String key() {
         return nodeId + "|" + vulnId;
     }

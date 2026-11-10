@@ -11,7 +11,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
-/** 每个用户一条规则：低于 minSeverity 的漏洞不打扰。 */
+/** One rule per user: vulnerabilities below minSeverity don't notify. */
 @Entity
 @Table(name = "alert_rules")
 public class AlertRule {

@@ -1,4 +1,4 @@
-# 生产（单机 EC2）编排：镜像来自 ECR，manifest 存 S3，不暴露内部端口。
+# Production (single EC2) composition: images from ECR, manifests in S3, no internal ports exposed.
 #   export ECR=123456789012.dkr.ecr.us-east-1.amazonaws.com
 #   export DEPWATCH_JWT_SECRET=$(openssl rand -base64 48)
 #   export DEPWATCH_S3_BUCKET=depwatch-manifests-123456789012
@@ -9,7 +9,7 @@ name: depwatch
 x-java-common: &java-common
   restart: always
   logging:
-    driver: awslogs            # 日志直接进 CloudWatch（EC2 role 已授权）
+    driver: awslogs            # logs go straight to CloudWatch (the EC2 role is authorised)
     options:
       awslogs-region: ${AWS_REGION:-us-east-1}
       awslogs-group: /depwatch/app

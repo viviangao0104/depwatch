@@ -40,10 +40,10 @@ class MavenPomParserTest {
 
         assertThat(g.nodes()).extracting(DependencyNode::id).containsExactlyInAnyOrder(
                 "Maven:com.fasterxml.jackson.core:jackson-databind@2.17.2",
-                "Maven:com.google.guava:guava@33.0.0-jre",            // 嵌套占位符
-                "Maven:org.apache.commons:commons-lang3@3.14.0",       // 来自 dependencyManagement
+                "Maven:com.google.guava:guava@33.0.0-jre",            // nested placeholder
+                "Maven:org.apache.commons:commons-lang3@3.14.0",       // from dependencyManagement
                 "Maven:com.example:sibling@1.0.0");                    // ${project.version}
-        // spring-boot-starter 没版本（由父 POM 管理）→ 跳过并告警
+        // spring-boot-starter has no version (managed by the parent POM) → skipped with a warning
         assertThat(g.warnings()).anyMatch(w -> w.contains("1 dependencies have versions managed"));
         assertThat(g.childrenOf(DependencyGraph.ROOT_ID)).hasSize(4);
     }

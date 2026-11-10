@@ -10,11 +10,11 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 持续监控：每天重新用最新的 OSV 数据检查每个项目。
+  * Continuous monitoring: re-check every project against the latest OSV data daily.
  *
- * ShedLock：scan-service 跑多个副本时，@Scheduled 会在每个副本上触发；
- * @SchedulerLock 用 DB 里的 shedlock 表做分布式锁，保证同一时刻只有一个副本执行。
- * lockAtLeastFor 防止任务秒完后另一个时钟稍慢的副本又拿到锁再跑一遍。
+  * ShedLock: with several scan-service replicas, @Scheduled fires on each of them;
+  * @SchedulerLock takes a distributed lock in the shedlock table so only one replica runs at a time.
+  * lockAtLeastFor stops a replica with a slightly slow clock from grabbing the lock and running again right after a fast finish.
  */
 @Component
 @ConditionalOnProperty(prefix = "depwatch.rescan", name = "enabled", havingValue = "true", matchIfMissing = true)

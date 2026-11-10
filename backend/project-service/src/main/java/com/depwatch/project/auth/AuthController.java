@@ -35,7 +35,7 @@ public class AuthController {
         return auth.login(req);
     }
 
-    /** 需要登录（网关校验 JWT 后注入用户头）。 */
+    /** Requires login (the gateway verifies the JWT and injects the user headers). */
     @GetMapping("/me")
     public UserInfo me() {
         return auth.me(UserContext.require().id());

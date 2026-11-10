@@ -13,9 +13,9 @@ import org.springframework.stereotype.Component;
 import java.util.UUID;
 
 /**
- * scan-service 的出站事件。进度事件是 fire-and-forget（丢了无所谓），
- * completed / detected 事件也异步发但记录失败日志——它们不走 outbox，是一个有意的取舍：
- * 扫描结果已经在 DB 里，用户刷新页面就能看到；告警漏发可以靠下次定时重扫补上。
+  * Outbound events from scan-service. Progress events are fire-and-forget (losing one is fine);
+  * completed / detected events are also sent asynchronously with failures logged — they deliberately bypass the outbox:
+  * the scan result is already in the DB and visible on refresh, and a missed alert is caught by the next scheduled rescan.
  */
 @Component
 public class ScanEventPublisher {

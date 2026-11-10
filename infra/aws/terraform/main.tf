@@ -6,7 +6,7 @@ terraform {
       version = "~> 5.70"
     }
   }
-  # 团队协作时把 state 放 S3 + DynamoDB 锁；个人项目本地 state 即可
+  # For team use, keep state in S3 + a DynamoDB lock table; local state is fine for a personal project
   # backend "s3" { bucket = "..."; key = "depwatch/terraform.tfstate"; region = "us-east-1"; dynamodb_table = "tf-locks" }
 }
 
@@ -47,7 +47,7 @@ resource "aws_ecr_repository" "svc" {
   name                 = "${local.name}/${each.key}"
   image_tag_mutability = "MUTABLE"
   force_delete         = true
-  image_scanning_configuration { scan_on_push = true }   # ECR 自带镜像漏洞扫描——和我们的项目主题呼应
+  image_scanning_configuration { scan_on_push = true }   # ECR's built-in image vulnerability scanning — fitting for this project
 }
 
 resource "aws_ecr_lifecycle_policy" "keep_last_5" {
@@ -100,7 +100,7 @@ resource "aws_s3_bucket_public_access_block" "frontend" {
   restrict_public_buckets = true
 }
 
-# 只允许 CloudFront（OAC）读前端 bucket
+# Only CloudFront (via OAC) may read the frontend bucket
 resource "aws_s3_bucket_policy" "frontend" {
   bucket = aws_s3_bucket.frontend.id
   policy = jsonencode({
@@ -149,7 +149,7 @@ resource "aws_iam_role_policy" "ec2" {
 }
 
 resource "aws_iam_role_policy_attachment" "ssm" {
-  # Session Manager：不开 22 端口也能进机器
+  # Session Manager: shell access without opening port 22
   role       = aws_iam_role.ec2.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
@@ -176,7 +176,7 @@ resource "aws_security_group" "ec2" {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]   # 可收紧为 CloudFront 的 managed prefix list
+    cidr_blocks = ["0.0.0.0/0"]   # can be tightened to the CloudFront managed prefix list
   }
   egress {
     from_port   = 0
@@ -236,7 +236,7 @@ data "aws_cloudfront_origin_request_policy" "all_viewer" { name = "Managed-AllVi
 resource "aws_cloudfront_distribution" "main" {
   enabled             = true
   default_root_object = "index.html"
-  price_class         = "PriceClass_100"   # 只用北美/欧洲边缘节点，最便宜
+  price_class         = "PriceClass_100"   # North America / Europe edges only — cheapest tier
   comment             = "${local.name} frontend + api"
 
   origin {
@@ -286,7 +286,7 @@ resource "aws_cloudfront_distribution" "main" {
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
   }
 
-  # SPA 路由：S3 对未知路径返回 403，改写成 index.html
+  # SPA routing: S3 returns 403 for unknown paths; rewrite to index.html
   custom_error_response {
     error_code         = 403
     response_code      = 200
@@ -304,7 +304,7 @@ resource "aws_cloudfront_distribution" "main" {
 
   viewer_certificate {
     cloudfront_default_certificate = true
-    # 自定义域名：
+    # Custom domain:
     # acm_certificate_arn = aws_acm_certificate.main.arn
     # ssl_support_method  = "sni-only"
   }

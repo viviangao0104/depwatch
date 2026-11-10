@@ -17,10 +17,10 @@ public interface ScanRepository extends JpaRepository<Scan, UUID> {
 
     Optional<Scan> findByIdAndUserId(UUID id, UUID userId);
 
-    /** 某项目上一次成功的扫描（用于 diff）。排除当前这次。 */
+    /** The project's previous successful scan (for diffing), excluding the current one. */
     Optional<Scan> findFirstByProjectIdAndStatusAndIdNotOrderByStartedAtDesc(UUID projectId, Scan.Status status, UUID excludeId);
 
-    /** 每个项目最新一次成功扫描——定时重扫的输入。 */
+    /** Latest successful scan per project — the input for scheduled rescans. */
     @Query(value = """
             SELECT DISTINCT ON (project_id) *
             FROM scans

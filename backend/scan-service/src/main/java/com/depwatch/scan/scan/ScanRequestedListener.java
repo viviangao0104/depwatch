@@ -19,8 +19,8 @@ public class ScanRequestedListener {
     }
 
     /**
-     * concurrency=3（见 yml）：最多 3 个线程并行扫描，对应 topic 的 3 个分区。
-     * 同一个项目的事件 key 相同 → 同一分区 → 串行处理，避免同一项目两次扫描互相 diff 出错。
+      * concurrency=3 (see yml): up to 3 scans in parallel, matching the topic's 3 partitions.
+      * Events for one project share a key → one partition → serial processing, so two scans of the same project never diff against each other mid-flight.
      */
     @KafkaListener(topics = Topics.SCAN_REQUESTED, groupId = "scan-service")
     public void onScanRequested(ScanRequestedEvent event) {

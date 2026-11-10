@@ -13,7 +13,7 @@ public class ShedLockConfig {
     public LockProvider lockProvider(JdbcTemplate jdbcTemplate) {
         return new JdbcTemplateLockProvider(JdbcTemplateLockProvider.Configuration.builder()
                 .withJdbcTemplate(jdbcTemplate)
-                .usingDbTime()      // 用 DB 的时钟，避免多副本之间系统时间不一致
+                .usingDbTime()      // use the DB clock so replicas with skewed system time agree
                 .build());
     }
 }

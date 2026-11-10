@@ -17,7 +17,7 @@ export default function ProjectsPage() {
     try {
       const [ps, scans] = await Promise.all([api.projects(), api.scans(undefined, 0, 100)])
       setProjects(ps)
-      // 每个项目取最近一次扫描做概览（scans 已按时间倒序）
+      // Latest scan per project for the overview (scans are already sorted newest-first)
       const map: Record<string, ScanSummary> = {}
       for (const s of scans.content) if (!map[s.projectId]) map[s.projectId] = s
       setLatest(map)

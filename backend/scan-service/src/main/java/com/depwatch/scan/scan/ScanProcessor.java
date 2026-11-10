@@ -32,11 +32,11 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * 扫描流水线：PARSING → QUERYING → ENRICHING → DIFFING → COMPLETED。
+  * Scan pipeline: PARSING → QUERYING → ENRICHING → DIFFING → COMPLETED.
  *
- * 事务边界刻意切得很细（TransactionTemplate 而不是整个方法 @Transactional）：
- * 调 OSV 可能要几十秒甚至几分钟，不能让一个 DB 连接在这期间一直被占着。
- * 每个阶段落库时才开事务，中间状态靠 scans.status = RUNNING 表达。
+  * Transaction boundaries are deliberately narrow (TransactionTemplate rather than one @Transactional method):
+  * OSV calls can take tens of seconds or minutes, and a DB connection must not be held for that long.
+  * A transaction opens only when a stage persists; intermediate state is expressed by scans.status = RUNNING.
  */
 @Service
 public class ScanProcessor {
@@ -70,16 +70,16 @@ public class ScanProcessor {
         this.tx = tx;
     }
 
-    // ───────────────────────── 入口 1：用户上传触发 ─────────────────────────
+    // ───────────────────────── Entry point 1: triggered by a user upload ─────────────────────────
 
     public void process(ScanRequestedEvent ev) {
-        // 幂等：Kafka 重复投递 / 消费者重启后重放，同一个 scanId 只处理一次
+        // Idempotency: Kafka redelivery / replay after a consumer restart — each scanId is processed once
         Optional<Scan> existing = scans.findById(ev.scanId());
         if (existing.isPresent() && existing.get().getStatus() != Scan.Status.FAILED) {
             log.info("Scan {} already {} — skipping duplicate event", ev.scanId(), existing.get().getStatus());
             return;
         }
-        existing.ifPresent(s -> tx.executeWithoutResult(st -> scans.delete(s)));   // 失败过的允许重跑
+        existing.ifPresent(s -> tx.executeWithoutResult(st -> scans.delete(s)));   // a failed scan may be re-run
 
         Scan scan = new Scan(ev.scanId(), ev.projectId(), ev.projectName(), ev.userId(),
                 ev.manifestKey(), ev.manifestFileName(), Scan.Trigger.MANUAL);
@@ -100,14 +100,14 @@ public class ScanProcessor {
         }
     }
 
-    // ───────────────────────── 入口 2：定时重扫 ─────────────────────────
+    // ───────────────────────── Entry point 2: scheduled rescan ─────────────────────────
 
     public void rescan(Scan previous) {
         Scan scan = new Scan(UUID.randomUUID(), previous.getProjectId(), previous.getProjectName(), previous.getUserId(),
                 previous.getManifestKey(), previous.getManifestFileName(), Scan.Trigger.SCHEDULED);
         tx.executeWithoutResult(st -> {
             scans.save(scan);
-            graphStore.copyGraph(previous.getId(), scan.getId());     // 复用上次的依赖图，不重新解析
+            graphStore.copyGraph(previous.getId(), scan.getId());     // reuse the previous graph; no re-parse
         });
         log.info("Scheduled rescan {} for project {} (based on {})", scan.getId(), scan.getProjectId(), previous.getId());
         try {
@@ -119,18 +119,18 @@ public class ScanProcessor {
         }
     }
 
-    // ───────────────────────── 共用流水线 ─────────────────────────
+    // ───────────────────────── Shared pipeline ─────────────────────────
 
     private void analyze(Scan scan, List<DependencyNode> nodes, Set<String> directIds) {
         Map<String, DependencyNode> byId = new HashMap<>();
         nodes.forEach(n -> byId.put(n.id(), n));
 
-        // QUERYING：批量问 OSV "这些 (包, 版本) 有哪些漏洞"
+        // QUERYING: ask OSV in batches "which vulnerabilities affect these (package, version) pairs?"
         events.progress(scan, ScanStage.QUERYING, 0, nodes.size(), "Querying OSV for " + nodes.size() + " packages");
         Map<String, List<String>> hits = osv.findVulnerabilities(nodes,
                 done -> events.progress(scan, ScanStage.QUERYING, done, nodes.size(), null));
 
-        // ENRICHING：拉每个唯一漏洞的详情（Redis 缓存挡住重复请求）
+        // ENRICHING: fetch details for each unique vulnerability (Redis cache absorbs repeats)
         Set<String> vulnIds = hits.values().stream().flatMap(List::stream).collect(Collectors.toCollection(LinkedHashSet::new));
         events.progress(scan, ScanStage.ENRICHING, 0, vulnIds.size(), "Fetching details for " + vulnIds.size() + " vulnerabilities");
         Map<String, JsonNode> osvJson = new HashMap<>();
@@ -149,7 +149,7 @@ public class ScanProcessor {
         }
         tx.executeWithoutResult(st -> vulns.saveAll(entities.values()));
 
-        // DIFFING：与该项目上一次成功扫描比对
+        // DIFFING: compare with the project's previous successful scan
         events.progress(scan, ScanStage.DIFFING, 0, 0, "Comparing with previous scan");
         Set<String> previousKeys = scans
                 .findFirstByProjectIdAndStatusAndIdNotOrderByStartedAtDesc(scan.getProjectId(), Scan.Status.COMPLETED, scan.getId())
@@ -183,7 +183,7 @@ public class ScanProcessor {
                 "%d vulnerable packages, %d findings (%d new)".formatted(hits.size(), current.size(), newCount));
         events.completed(scan);
 
-        // 每条新增 finding 一个告警事件。首次扫描所有 finding 都是"新"，照发——用户确实第一次知道
+        // One alert event per new finding. On a first scan every finding is "new" and that's correct — the user is learning about them for the first time
         for (ScanFinding f : current) {
             if (!f.isNew()) continue;
             DependencyNode node = byId.get(f.getNodeId());

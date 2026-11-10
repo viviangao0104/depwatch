@@ -3,7 +3,7 @@ package com.depwatch.common;
 import java.util.Locale;
 
 /**
- * 统一的漏洞严重度。顺序即严重程度，便于用 ordinal / compareTo 做"最低告警级别"过滤。
+  * Unified vulnerability severity. Declaration order is severity order, so ordinal / compareTo can implement "minimum alert level" filtering.
  */
 public enum Severity {
     UNKNOWN(0),
@@ -27,7 +27,7 @@ public enum Severity {
     }
 
     /**
-     * GHSA / OSV database_specific.severity 用的是 CRITICAL / HIGH / MODERATE / LOW。
+      * GHSA / OSV database_specific.severity uses CRITICAL / HIGH / MODERATE / LOW.
      */
     public static Severity fromLabel(String label) {
         if (label == null) return UNKNOWN;
@@ -41,7 +41,7 @@ public enum Severity {
     }
 
     /**
-     * CVSS v3.x 基础分 → 定性等级（官方映射表）。
+      * CVSS v3.x base score → qualitative rating (official mapping).
      */
     public static Severity fromCvssScore(double score) {
         if (score <= 0.0) return UNKNOWN;   // 0.0 = None

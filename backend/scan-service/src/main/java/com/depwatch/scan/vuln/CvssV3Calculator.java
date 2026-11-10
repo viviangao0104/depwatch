@@ -5,10 +5,10 @@ import java.util.Map;
 import java.util.OptionalDouble;
 
 /**
- * CVSS v3.0 / v3.1 基础分计算器（Base Score）。
+  * CVSS v3.0 / v3.1 base score calculator.
  *
- * OSV 的 severity 字段只给向量字符串（如 CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H），
- * 不给分数，所以要自己算。公式来自 FIRST 官方规范：
+  * OSV's severity field only carries the vector string (e.g. CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H),
+  * not the score, so we compute it ourselves. Formula from the FIRST specification:
  * https://www.first.org/cvss/v3.1/specification-document#7-1-Base-Metrics-Equations
  */
 public final class CvssV3Calculator {
@@ -86,7 +86,7 @@ public final class CvssV3Calculator {
     }
 
     /**
-     * CVSS 3.1 规范里的 Roundup：向上取到一位小数，用整数运算避开浮点误差。
+      * Roundup as defined in the CVSS 3.1 spec: round up to one decimal using integer arithmetic to avoid floating-point error.
      */
     static double roundUp(double x) {
         long intInput = Math.round(x * 100_000);

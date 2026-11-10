@@ -11,8 +11,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.Date;
 
 /**
- * 签发 HS256 JWT。网关用同一个 secret 校验。
- * 生产里把 secret 放 AWS Secrets Manager / SSM Parameter Store，通过环境变量注入。
+  * Issues HS256 JWTs. The gateway verifies them with the same secret.
+  * In production keep the secret in AWS Secrets Manager / SSM Parameter Store and inject it as an environment variable.
  */
 @Service
 public class JwtService {

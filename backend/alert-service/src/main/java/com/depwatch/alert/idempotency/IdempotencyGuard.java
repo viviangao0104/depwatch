@@ -12,13 +12,13 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * 消费幂等。把"插入 processed_events"和"处理事件产生的写入"放在同一个事务里：
- * 事务提交 → 事件被处理且被标记；事务回滚 → 两者都没发生，下次重试还能进来。
+  * Consumer idempotency. "insert into processed_events" and "the writes caused by handling the event" share one transaction:
+  * commit → the event is handled and marked; rollback → neither happened, so the retry gets in again.
  *
- * 为什么只查 existsById 而不处理并发插入冲突：
- * Kafka 保证同一分区同一时刻只有一个消费者实例在消费，而重复投递总是发生在同一分区上
- * （rebalance 后重放），所以同一个 eventId 不会被两个线程同时处理。
- * 即便极端情况撞了主键，事务回滚 + Kafka 重试后 existsById 会返回 true，结果仍然正确。
+  * Why only existsById, with no handling of concurrent insert conflicts:
+  * Kafka guarantees a single consumer instance per partition at any time, and redeliveries always land on the
+  * same partition (replay after a rebalance), so one eventId is never processed by two threads at once.
+  * Even if a PK collision did happen, the rollback + Kafka retry makes existsById return true — still correct.
  */
 @Component
 public class IdempotencyGuard {
@@ -32,7 +32,7 @@ public class IdempotencyGuard {
     }
 
     /**
-     * @return true 表示首次处理（已记录），false 表示重复事件（调用方应直接跳过）
+      * @return true on first processing (now recorded), false for a duplicate (caller should skip)
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean markProcessed(UUID eventId, String eventType) {
@@ -44,7 +44,7 @@ public class IdempotencyGuard {
         return true;
     }
 
-    /** 每天凌晨清理 7 天前的记录；超过 Kafka 保留期的事件不可能再被重放。 */
+    /** Nightly cleanup of records older than 7 days; events past Kafka's retention can't be replayed anyway. */
     @Scheduled(cron = "0 30 4 * * *")
     @Transactional
     public void cleanup() {

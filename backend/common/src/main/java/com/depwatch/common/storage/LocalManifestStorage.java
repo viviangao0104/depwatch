@@ -33,7 +33,7 @@ public class LocalManifestStorage implements ManifestStorage {
         Files.deleteIfExists(resolve(key));
     }
 
-    /** 防路径穿越：key 解析后必须仍在 root 之下。 */
+    /** Path-traversal guard: the resolved key must stay under root. */
     private Path resolve(String key) {
         Path p = root.resolve(key).normalize();
         if (!p.startsWith(root)) {

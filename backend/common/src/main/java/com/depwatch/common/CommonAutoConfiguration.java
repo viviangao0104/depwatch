@@ -20,8 +20,8 @@ import java.io.IOException;
 import java.nio.file.Path;
 
 /**
- * 通过 META-INF/spring/...AutoConfiguration.imports 自动装配，
- * 三个 Servlet 服务引入 common 依赖即可获得：用户上下文过滤器、统一异常处理、manifest 存储。
+  * Auto-configured via META-INF/spring/...AutoConfiguration.imports:
+  * the three servlet services get the user-context filter, uniform error handling and manifest storage just by depending on common.
  */
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)

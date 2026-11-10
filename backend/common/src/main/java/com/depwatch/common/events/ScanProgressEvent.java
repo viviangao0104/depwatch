@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * scan-service → alert-service → WebSocket。高频、允许丢失。
+  * scan-service → alert-service → WebSocket. High-frequency, loss-tolerant.
  */
 public record ScanProgressEvent(
         UUID eventId,

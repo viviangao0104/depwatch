@@ -14,8 +14,8 @@ const LABELS: Record<string, string> = {
 }
 
 /**
- * 订阅 /topic/scans/{scanId}，实时显示阶段和进度。
- * onDone 在 COMPLETED / FAILED 时回调，父组件刷新数据。
+  * Subscribes to /topic/scans/{scanId} and shows the live stage and progress.
+  * onDone fires on COMPLETED / FAILED so the parent can refresh its data.
  */
 export default function ScanProgressBar({ scanId, onDone }: { scanId: string; onDone?: (p: ScanProgress) => void }) {
   const [progress, setProgress] = useState<ScanProgress | null>(null)

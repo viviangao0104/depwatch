@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// 开发时把 /api 和 /ws 代理到网关，避免 CORS 和写死地址
+// In dev, proxy /api and /ws to the gateway to avoid CORS and hard-coded URLs
 export default defineConfig({
   plugins: [react()],
   server: {

@@ -1,10 +1,10 @@
 package com.depwatch.scan.graph;
 
 /**
- * 依赖图节点。同一个包的不同版本是不同节点（npm 里很常见）。
+  * A dependency graph node. Different versions of the same package are different nodes (common in npm).
  *
- * @param ecosystem OSV 生态名：npm / Maven / PyPI ...
- * @param name      npm 包名 或 Maven 的 groupId:artifactId
+  * @param ecosystem OSV ecosystem name: npm / Maven / PyPI ...
+  * @param name      npm package name, or groupId:artifactId for Maven
  */
 public record DependencyNode(String ecosystem, String name, String version) {
 

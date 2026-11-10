@@ -11,8 +11,8 @@ spring:
   cloud:
     gateway:
       default-filters:
-        # （客户端伪造的 X-User-* 头在 JwtAuthGlobalFilter 里剥离，它比这里的过滤器先执行）
-        # Redis 令牌桶限流：每个用户（未登录则按 IP）每秒 20 个请求，突发 40
+        # (Client-supplied X-User-* headers are stripped in JwtAuthGlobalFilter, which runs before these filters)
+        # Redis token-bucket rate limiting: 20 req/s per user (per IP when unauthenticated), burst 40
         - name: RequestRateLimiter
           args:
             redis-rate-limiter.replenishRate: 20
@@ -32,7 +32,7 @@ spring:
           predicates:
             - Path=/api/alerts/**
         - id: alert-ws
-          # WebSocket：http → ws 协议升级由 Gateway 自动处理
+          # WebSocket: the http → ws upgrade is handled by the Gateway automatically
           uri: ${DEPWATCH_ROUTES_ALERT_WS:ws://localhost:8083}
           predicates:
             - Path=/ws/**
@@ -46,7 +46,7 @@ spring:
             max-age: 3600
       httpclient:
         connect-timeout: 5000
-        response-timeout: 60s          # 上传大 lockfile 可能慢
+        response-timeout: 60s          # uploading a large lockfile can be slow
 
 depwatch:
   jwt:

@@ -16,7 +16,7 @@ spring:
     open-in-view: false
     properties:
       hibernate.jdbc.time_zone: UTC
-      hibernate.jdbc.batch_size: 100          # 依赖节点/边批量插入
+      hibernate.jdbc.batch_size: 100          # batch inserts for graph nodes/edges
       hibernate.order_inserts: true
   flyway:
     enabled: true
@@ -40,7 +40,7 @@ spring:
       properties:
         spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
         spring.json.trusted.packages: com.depwatch.common.events
-        max.poll.interval.ms: 600000        # 一次扫描可能要几分钟，避免被踢出消费组
+        max.poll.interval.ms: 600000        # a scan can take minutes; don't get kicked out of the consumer group
         max.poll.records: 1
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -49,7 +49,7 @@ spring:
       properties:
         enable.idempotence: true
     listener:
-      ack-mode: record                      # 每条处理完手动/自动提交 offset
+      ack-mode: record                      # commit the offset after each record is processed
       concurrency: 3
 
 depwatch:
@@ -63,21 +63,21 @@ depwatch:
       region: ${AWS_REGION:us-east-1}
   osv:
     base-url: https://api.osv.dev
-    batch-size: 1000                        # OSV querybatch 上限
+    batch-size: 1000                        # OSV querybatch limit
     connect-timeout-ms: 5000
     read-timeout-ms: 30000
   rescan:
     enabled: true
-    cron: "0 0 3 * * *"                     # 每天 03:00
+    cron: "0 0 3 * * *"                     # daily at 03:00
     lock-at-most-for: PT2H
 
 resilience4j:
   ratelimiter:
     instances:
       osv:
-        limit-for-period: 20                # 每秒最多 20 次请求
+        limit-for-period: 20                # at most 20 requests per second
         limit-refresh-period: 1s
-        timeout-duration: 30s               # 拿不到令牌最多等 30s
+        timeout-duration: 30s               # wait up to 30s for a permit
   retry:
     instances:
       osv:

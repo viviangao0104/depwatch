@@ -11,8 +11,8 @@ import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.ExponentialBackOff;
 
 /**
- * 消费失败处理：指数退避重试 3 次，仍失败则发到 <topic>.DLT（死信 topic），然后提交 offset 继续。
- * 没有这个，一条坏消息会把整个分区卡死（poison pill）。
+  * Consumer failure handling: retry 3 times with exponential backoff, then send to <topic>.DLT (dead-letter topic) and commit the offset.
+  * Without this, one bad message blocks the whole partition (poison pill).
  */
 @Configuration
 public class KafkaConfig {

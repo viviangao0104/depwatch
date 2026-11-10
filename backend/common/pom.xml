@@ -39,7 +39,7 @@
 
     <build>
         <plugins>
-            <!-- common 是普通 jar，不是可执行 Boot jar -->
+            <!-- common is a plain jar, not an executable Boot jar -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

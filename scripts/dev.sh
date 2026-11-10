@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 本地开发辅助脚本
-#   scripts/dev.sh infra     只起 Postgres / Redis / Kafka / Kafka UI（IDE 里跑 Java 服务）
-#   scripts/dev.sh all       全部容器化启动
-#   scripts/dev.sh demo      注册用户、建项目、上传样例 lockfile，打印 scanId
-#   scripts/dev.sh down      停止并删除所有容器和数据卷
+# Local development helper
+#   scripts/dev.sh infra     start only Postgres / Redis / Kafka / Kafka UI (run the Java services from your IDE)
+#   scripts/dev.sh all       start everything in containers
+#   scripts/dev.sh demo      register a user, create projects, upload the sample lockfiles, print scanIds
+#   scripts/dev.sh down      stop and remove all containers and volumes
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

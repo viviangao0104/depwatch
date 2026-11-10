@@ -15,7 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 统一错误响应格式。各服务通过 @Import 或组件扫描引入。
+  * Uniform error response format. Pulled into each service via @Import or component scan.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -46,7 +46,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleOther(Exception ex, HttpServletRequest req) {
-        // Spring 自己的 404 / 405 / 400（NoResourceFoundException 等）带有状态码，原样透传
+        // Spring's own 404 / 405 / 400 (NoResourceFoundException etc.) carry a status code; pass it through
         if (ex instanceof org.springframework.web.ErrorResponse er) {
             HttpStatus status = HttpStatus.valueOf(er.getStatusCode().value());
             return ResponseEntity.status(status)

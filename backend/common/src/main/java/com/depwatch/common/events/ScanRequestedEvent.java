@@ -5,7 +5,7 @@ import java.util.UUID;
 
 /**
  * project-service → scan-service。
- * 只携带 storage key（Claim Check 模式），不带文件内容。
+  * Carries only the storage key (Claim Check pattern), never the file contents.
  */
 public record ScanRequestedEvent(
         UUID eventId,

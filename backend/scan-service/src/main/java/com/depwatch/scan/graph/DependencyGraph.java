@@ -13,10 +13,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 有向依赖图（邻接表）。root 是被扫描的项目本身，不参与漏洞查询。
+  * Directed dependency graph (adjacency list). root is the scanned project itself and is never queried for vulnerabilities.
  *
- * 为什么是图不是树：npm 去重后同一个包可能被多个父包依赖；Maven 的 dependency:tree 虽然是树，
- * 但统一成图可以用同一套算法算"最短引入路径"和"深度"。
+  * Why a graph and not a tree: after npm dedup one package can have several parents; Maven's dependency:tree is a tree,
+  * but treating both as graphs lets one algorithm compute "shortest introduction path" and "depth" for both.
  */
 public class DependencyGraph {
 
@@ -65,7 +65,7 @@ public class DependencyGraph {
         return childrenOf(ROOT_ID).contains(id);
     }
 
-    /** 所有边，便于批量落库。 */
+    /** All edges, for batch persistence. */
     public List<String[]> edges() {
         List<String[]> out = new ArrayList<>();
         children.forEach((p, cs) -> cs.forEach(c -> out.add(new String[]{p, c})));
@@ -73,7 +73,7 @@ public class DependencyGraph {
     }
 
     /**
-     * BFS 计算每个节点到 root 的最短深度（直接依赖 = 1）。不可达的节点深度 = -1。
+      * BFS depth of every node from root (direct dependency = 1). Unreachable nodes get -1.
      */
     public Map<String, Integer> depths() {
         Map<String, Integer> depth = new HashMap<>();
@@ -98,8 +98,8 @@ public class DependencyGraph {
     }
 
     /**
-     * 从 root 到目标节点的最短路径（不含 root）。回答"这个有漏洞的包是谁引进来的"。
-     * 用静态方法以便 scan-service 从 DB 读出边后也能复用。
+      * Shortest path from root to the target (root excluded). Answers "which package pulled in this vulnerable one?".
+      * Static so scan-service can reuse it on edges loaded from the DB.
      */
     public static List<String> shortestPath(Map<String, Set<String>> childrenByParent, String target) {
         if (ROOT_ID.equals(target)) return List.of();

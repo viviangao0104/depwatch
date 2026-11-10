@@ -60,7 +60,7 @@ public class ScanQueryService {
                 WHERE f.scan_id = ?
                 """);
         if (Boolean.TRUE.equals(onlyNew)) sql.append(" AND f.is_new");
-        // 严重度按 enum 顺序排序：CRITICAL > HIGH > MEDIUM > LOW > UNKNOWN
+        // Order by severity in enum order: CRITICAL > HIGH > MEDIUM > LOW > UNKNOWN
         sql.append("""
                  ORDER BY CASE v.severity
                               WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2

@@ -19,7 +19,7 @@ public class AlertEventListeners {
         this.live = live;
     }
 
-    /** 进度事件：直接转发到 WebSocket，不落库、不去重（丢了也无所谓）。 */
+    /** Progress events: forwarded straight to WebSocket — not persisted, not deduplicated (losing one is fine). */
     @KafkaListener(topics = Topics.SCAN_PROGRESS, groupId = "alert-service")
     public void onProgress(ScanProgressEvent e) {
         live.progress(e);

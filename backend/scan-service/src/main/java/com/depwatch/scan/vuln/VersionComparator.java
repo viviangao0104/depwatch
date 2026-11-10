@@ -4,13 +4,13 @@ import java.util.Comparator;
 import java.util.regex.Pattern;
 
 /**
- * 宽松的版本比较器，同时适用于 semver（npm）和 Maven 风格版本。
+  * Lenient version comparator that works for both semver (npm) and Maven-style versions.
  *
- * 规则：按 . - + 切段；两段都是数字按数值比，否则按字符串比；
- * 带预发布后缀（1.0.0-rc1）小于同核心的正式版（1.0.0）；
- * 常见限定词排序 alpha < beta < milestone < rc < snapshot < 正式 < sp。
+  * Rules: split on . - + ; compare numerically when both segments are numeric, otherwise as strings;
+  * a pre-release suffix (1.0.0-rc1) sorts below the release with the same core (1.0.0);
+  * common qualifiers order as alpha < beta < milestone < rc < snapshot < release < sp.
  *
- * 这不是完整的 Maven ComparableVersion，但对"找到比当前版本大的最小修复版本"足够。
+  * Not a full Maven ComparableVersion, but sufficient for "find the smallest fixed version above the current one".
  */
 public final class VersionComparator implements Comparator<String> {
 
@@ -41,13 +41,13 @@ public final class VersionComparator implements Comparator<String> {
     }
 
     private static int compareSegment(String x, String y) {
-        // 缺失段：数字缺失视为 0；若另一边是限定词（预发布），缺失（正式版）更大
+        // Missing segment: a missing number counts as 0; if the other side is a qualifier (pre-release), the missing (release) side is greater
         if (x == null) return y == null ? 0 : (isNumeric(y) ? compareNumeric("0", y) : 1);
         if (y == null) return isNumeric(x) ? compareNumeric(x, "0") : -1;
 
         boolean nx = isNumeric(x), ny = isNumeric(y);
         if (nx && ny) return compareNumeric(x, y);
-        if (nx) return 1;        // 数字 > 限定词 (1.0.1 > 1.0-rc)
+        if (nx) return 1;        // number > qualifier (1.0.1 > 1.0-rc)
         if (ny) return -1;
         return Integer.compare(qualifierRank(x), qualifierRank(y)) != 0
                 ? Integer.compare(qualifierRank(x), qualifierRank(y))

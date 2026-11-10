@@ -5,7 +5,7 @@ import com.depwatch.common.web.ApiException;
 import java.util.Locale;
 
 /**
- * 按文件名识别 manifest 类型。与 scan-service 的 ManifestParser.supports() 保持一致。
+  * Detects the manifest type from the file name. Keep in sync with ManifestParser.supports() in scan-service.
  */
 public enum ManifestType {
     NPM_LOCKFILE,

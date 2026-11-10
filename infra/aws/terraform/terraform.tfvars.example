@@ -1,5 +1,5 @@
 region        = "us-east-1"
 instance_type = "t4g.medium"
-key_pair_name = "my-mac-key"          # EC2 → Key Pairs 里创建，下载 .pem 放到 ~/.ssh
+key_pair_name = "my-mac-key"          # create under EC2 → Key Pairs, save the .pem to ~/.ssh
 my_ip_cidr    = "203.0.113.42/32"     # curl ifconfig.me
-github_repo   = "your-github-name/depwatch"   # 不用 CI 可留空 ""
+github_repo   = "your-github-name/depwatch"   # leave "" if you don't use CI

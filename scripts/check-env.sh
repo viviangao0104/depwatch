@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 检查本机开发环境是否齐全（对应 docs/SETUP_MAC.md）
+# Checks that the local dev environment is complete (see docs/SETUP_MAC.md)
 set -u
 ok=0; bad=0
 

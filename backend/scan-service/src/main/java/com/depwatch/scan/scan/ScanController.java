@@ -50,7 +50,7 @@ public class ScanController {
         return query.dependencies(id);
     }
 
-    /** nodeId 形如 npm:lodash@4.17.15，含特殊字符，放 query 参数而不是路径。 */
+    /** nodeId looks like npm:lodash@4.17.15 and contains special characters, so it goes in a query parameter rather than the path. */
     @GetMapping("/scans/{id}/path")
     public DependencyPath path(@PathVariable UUID id, @RequestParam String nodeId) {
         return query.path(id, nodeId);

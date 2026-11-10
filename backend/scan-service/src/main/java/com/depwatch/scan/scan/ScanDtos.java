@@ -53,7 +53,7 @@ public final class ScanDtos {
         }
     }
 
-    /** "这个包是怎么进到我项目里的" */
+    /** "How did this package get into my project?" */
     public record DependencyPath(String nodeId, List<String> path) {
     }
 }

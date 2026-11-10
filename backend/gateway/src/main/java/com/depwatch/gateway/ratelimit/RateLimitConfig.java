@@ -13,8 +13,8 @@ import java.util.Optional;
 public class RateLimitConfig {
 
     /**
-     * 限流维度：已登录按用户 ID，未登录（登录/注册接口）按客户端 IP。
-     * 在 ALB / CloudFront 后面时真实 IP 在 X-Forwarded-For 第一段。
+      * Rate-limit key: user ID when authenticated, client IP otherwise (login / register endpoints).
+      * Behind an ALB / CloudFront the real IP is the first entry of X-Forwarded-For.
      */
     @Bean
     public KeyResolver principalKeyResolver() {

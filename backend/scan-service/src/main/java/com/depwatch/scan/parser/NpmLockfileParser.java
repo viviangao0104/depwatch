@@ -15,17 +15,17 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 解析 package-lock.json（lockfileVersion 1 / 2 / 3）。
+  * Parses package-lock.json (lockfileVersion 1 / 2 / 3).
  *
- * v2/v3 的 "packages" 是一个扁平 map，key 是安装路径：
- *   ""                                    → 项目自身（root）
- *   "node_modules/a"                      → 提升到顶层的 a
- *   "node_modules/a/node_modules/b"       → 因版本冲突被嵌套安装在 a 下面的 b
+  * In v2/v3, "packages" is a flat map keyed by install path:
+  *   ""                                    → the project itself (root)
+  *   "node_modules/a"                      → a, hoisted to the top level
+  *   "node_modules/a/node_modules/b"       → b, nested under a because of a version conflict
  *
- * 边的还原必须模拟 Node 的模块解析算法：包 P 依赖 N 时，先找 P/node_modules/N，
- * 找不到就到 P 的上一级 node_modules 找，一直到项目根。这正是 npm 的 hoisting 规则。
+  * Rebuilding edges means simulating Node's module resolution: when package P depends on N, look for P/node_modules/N first,
+  * then walk up to the parent node_modules, all the way to the project root. This is exactly npm's hoisting rule.
  *
- * v1 没有 "packages"，而是嵌套的 "dependencies"，先摊平成同样的路径 map 再走同一套逻辑。
+  * v1 has no "packages", only a nested "dependencies" tree; it is flattened into the same path map and then handled identically.
  */
 @Component
 public class NpmLockfileParser implements ManifestParser {
@@ -64,16 +64,16 @@ public class NpmLockfileParser implements ManifestParser {
         DependencyGraph graph = new DependencyGraph();
         Map<String, String> pathToNodeId = new HashMap<>();
 
-        // 1. 建节点
+        // 1. Nodes
         for (Map.Entry<String, JsonNode> e : packages.entrySet()) {
             String path = e.getKey();
             JsonNode pkg = e.getValue();
-            if (path.isEmpty()) continue;                       // root 自身
+            if (path.isEmpty()) continue;                       // the root itself
             if (pkg.path("link").asBoolean(false)) {
                 graph.addWarning("Skipped workspace link: " + path);
                 continue;
             }
-            if (!path.contains(NODE_MODULES)) {                 // workspace 本地包，不是三方依赖
+            if (!path.contains(NODE_MODULES)) {                 // local workspace package, not a third-party dependency
                 continue;
             }
             String name = nameFromPath(path);
@@ -87,7 +87,7 @@ public class NpmLockfileParser implements ManifestParser {
             pathToNodeId.put(path, node.id());
         }
 
-        // 2. 建边
+        // 2. Edges
         if (version >= 2) {
             JsonNode rootPkg = packages.getOrDefault("", mapper.createObjectNode());
             addEdges(graph, packages, pathToNodeId, "", DependencyGraph.ROOT_ID, rootPkg,
@@ -98,7 +98,7 @@ public class NpmLockfileParser implements ManifestParser {
                         "dependencies", "optionalDependencies", "peerDependencies");
             }
         } else {
-            // v1：依赖关系在 "requires" 里；直接依赖不可知，用"没有任何父节点的顶层包"近似
+            // v1: relationships live in "requires"; direct deps are unknown, approximated as "top-level packages with no parent"
             for (Map.Entry<String, String> e : pathToNodeId.entrySet()) {
                 JsonNode pkg = packages.get(e.getKey());
                 addEdges(graph, packages, pathToNodeId, e.getKey(), e.getValue(), pkg, "requires");
@@ -123,14 +123,14 @@ public class NpmLockfileParser implements ManifestParser {
             while (names.hasNext()) {
                 String depName = names.next();
                 String resolvedPath = resolve(packages, fromPath, depName);
-                if (resolvedPath == null) continue;              // optional / peer 未安装
+                if (resolvedPath == null) continue;              // optional / peer dependency not installed
                 String childId = pathToNodeId.get(resolvedPath);
                 if (childId != null) graph.addEdge(fromNodeId, childId);
             }
         }
     }
 
-    /** Node 模块解析：从 fromPath 逐级向上找 node_modules/<name>。 */
+    /** Node module resolution: walk up from fromPath looking for node_modules/<name>. */
     static String resolve(Map<String, JsonNode> packages, String fromPath, String name) {
         String dir = fromPath;
         while (true) {
@@ -148,7 +148,7 @@ public class NpmLockfileParser implements ManifestParser {
         return idx < 0 ? path : path.substring(idx + NODE_MODULES.length());
     }
 
-    /** v1 嵌套结构摊平成 path → entry。 */
+    /** Flattens the nested v1 structure into path → entry. */
     private void flattenV1(JsonNode deps, String parentPath, Map<String, JsonNode> out) {
         deps.fields().forEachRemaining(e -> {
             String path = (parentPath.isEmpty() ? "" : parentPath + "/") + NODE_MODULES + e.getKey();

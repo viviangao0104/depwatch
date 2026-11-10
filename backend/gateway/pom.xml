@@ -13,7 +13,7 @@
     <name>gateway</name>
     <description>Edge: routing, JWT verification, rate limiting, CORS, WebSocket proxy</description>
 
-    <!-- 注意：网关是 WebFlux（响应式），不能依赖 common（里面有 Spring MVC） -->
+    <!-- Note: the gateway is WebFlux (reactive) and must not depend on common (which pulls in Spring MVC) -->
     <dependencies>
         <dependency>
             <groupId>org.springframework.cloud</groupId>

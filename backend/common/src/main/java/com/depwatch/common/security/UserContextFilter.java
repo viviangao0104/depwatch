@@ -11,10 +11,10 @@ import java.io.IOException;
 import java.util.UUID;
 
 /**
- * 从网关注入的头里恢复用户身份。
+  * Restores the user identity from the headers injected by the gateway.
  *
- * 安全前提：下游服务只能被网关访问（私有子网 / 安全组 / K8s NetworkPolicy），
- * 且网关会剥离客户端自带的 X-User-* 头。这个权衡在 docs/ARCHITECTURE.md 第 3 节有说明。
+  * Security precondition: downstream services are reachable only through the gateway (private subnet / security groups / K8s NetworkPolicy),
+  * and the gateway strips client-supplied X-User-* headers. The trade-off is discussed in docs/ARCHITECTURE.md §3.
  */
 public class UserContextFilter extends OncePerRequestFilter implements Ordered {
 

@@ -16,10 +16,10 @@ import java.util.Map;
 import java.util.function.IntConsumer;
 
 /**
- * 面向业务的 OSV 客户端：分批、缓存。HTTP 细节和容错在 OsvHttpClient。
+  * Business-facing OSV client: batching and caching. HTTP details and resilience live in OsvHttpClient.
  *
- * 缓存放在这一层而不是 OsvHttpClient，是为了让缓存命中时根本不经过 RateLimiter（不消耗令牌）。
- * Spring 的 @Cacheable 是基于代理的，所以必须跨 bean 调用才生效。
+  * The cache sits here rather than in OsvHttpClient so a cache hit never reaches the RateLimiter (no permit consumed).
+  * Spring's @Cacheable is proxy-based, so the call must cross a bean boundary to take effect.
  */
 @Service
 public class OsvClient {
@@ -33,8 +33,8 @@ public class OsvClient {
     }
 
     /**
-     * @param onBatchDone 每批完成后回调已处理的节点数，用于发进度事件
-     * @return nodeId → 命中的漏洞 ID 列表（无漏洞的节点不出现在 map 里）
+      * @param onBatchDone called after each batch with the number of nodes processed so far, used for progress events
+      * @return nodeId → list of matching vulnerability IDs (nodes without vulnerabilities are absent from the map)
      */
     public Map<String, List<String>> findVulnerabilities(List<DependencyNode> nodes, IntConsumer onBatchDone) {
         Map<String, List<String>> result = new LinkedHashMap<>();
@@ -47,7 +47,7 @@ public class OsvClient {
             QueryBatchResponse resp = http.queryBatch(new QueryBatchRequest(queries));
             List<QueryResult> results = resp == null || resp.results() == null ? List.of() : resp.results();
 
-            // OSV 保证 results 与 queries 顺序一一对应
+            // OSV guarantees results are in the same order as queries
             for (int i = 0; i < slice.size() && i < results.size(); i++) {
                 QueryResult r = results.get(i);
                 if (r != null && r.vulns() != null && !r.vulns().isEmpty()) {
@@ -61,7 +61,7 @@ public class OsvClient {
         return result;
     }
 
-    /** 漏洞详情原始 JSON，Redis 缓存 24h（TTL 见 spring.cache.redis.time-to-live）。 */
+    /** Raw vulnerability JSON, cached in Redis for 24h (TTL: spring.cache.redis.time-to-live). */
     @Cacheable(cacheNames = "osv-vuln", key = "#vulnId", unless = "#result == null")
     public String fetchVulnerabilityRaw(String vulnId) {
         return http.fetchVulnerabilityRaw(vulnId);

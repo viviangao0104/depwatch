@@ -1,7 +1,7 @@
-# 多阶段构建，所有 Java 服务共用：
+# Multi-stage build shared by all Java services:
 #   docker build --build-arg MODULE=scan-service -t depwatch/scan-service .
 #
-# 阶段 1：先只拷 pom 下载依赖（利用 Docker 层缓存，改代码不重新下依赖）
+# Stage 1: copy only the POMs and download dependencies (Docker layer cache — code changes don't re-download)
 FROM maven:3.9-eclipse-temurin-21 AS deps
 WORKDIR /build
 COPY pom.xml .
@@ -12,20 +12,20 @@ COPY scan-service/pom.xml scan-service/
 COPY alert-service/pom.xml alert-service/
 RUN mvn -q -B dependency:go-offline -DexcludeReactor=false || true
 
-# 阶段 2：编译目标模块及其依赖的模块（-am）
+# Stage 2: compile the target module and the modules it depends on (-am)
 FROM deps AS build
 ARG MODULE
 COPY . .
 RUN mvn -q -B -pl ${MODULE} -am package -DskipTests
 
-# 阶段 3：解开 Boot 分层 jar
+# Stage 3: extract the Boot layered jar
 FROM eclipse-temurin:21-jre AS extract
 ARG MODULE
 WORKDIR /app
 COPY --from=build /build/${MODULE}/target/*.jar app.jar
 RUN java -Djarmode=layertools -jar app.jar extract
 
-# 阶段 4：运行镜像（非 root 用户）
+# Stage 4: runtime image (non-root user)
 FROM eclipse-temurin:21-jre
 RUN useradd -r -u 10001 -g root app
 WORKDIR /app
