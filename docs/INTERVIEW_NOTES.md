@@ -1,27 +1,30 @@
-# 面试讲解笔记
+# Interview Notes
 
-> 目的：让你能在 2 分钟内讲清楚项目，并且在面试官追问任何一个点时都有东西说。
-> **先把代码读一遍再看这个**——面试官一眼能看出你是背稿子还是真做过。
+> Goal: explain the project in 2 minutes, and have something to say when the interviewer drills into any single point.
+> **Read the code before reading this.** Interviewers can tell the difference between a script and real experience.
+
+[中文版](INTERVIEW_NOTES.zh-CN.md)
 
 ---
 
-## 一、2 分钟电梯版
+## 1. The 2-minute version
 
-> "我做了一个开源依赖漏洞追踪平台，类似 Dependabot / Snyk 的核心功能。
-> 用户上传 package-lock.json 或 Maven 依赖树，系统解析出完整的依赖图——包括传递依赖——
-> 批量比对 OSV 漏洞数据库，算出每个漏洞的严重度和修复版本，并且每天自动重新检查，
-> 有新漏洞通过 WebSocket 和 Slack webhook 实时通知。
+> "I built an open-source dependency vulnerability tracker — think the core of Dependabot or Snyk.
+> You upload a package-lock.json or a Maven dependency tree, the system parses the full dependency graph including
+> transitive dependencies, batch-queries the OSV vulnerability database, computes severity and the fixed version for each
+> finding, and re-checks every project daily. New vulnerabilities are pushed in real time over WebSocket and Slack webhooks.
 >
-> 架构上是 4 个 Spring Boot 微服务：网关做 JWT 和限流，project-service 管用户和上传，
-> scan-service 是核心的异步扫描流水线，alert-service 负责通知。服务间用 Kafka 解耦，
-> 用了 Transactional Outbox 保证事件不丢，消费端做了幂等。部署在 AWS 上：
-> 前端 S3 + CloudFront，后端容器化跑在 EC2 上，用 Terraform 管资源，GitHub Actions 做 CI/CD。"
+> Architecturally it's four Spring Boot microservices: a gateway for JWT and rate limiting, a project service for users
+> and uploads, a scan service that runs the asynchronous scanning pipeline, and an alert service for notifications.
+> They're decoupled with Kafka. I used the Transactional Outbox pattern so events are never lost, and made the consumers
+> idempotent. It's deployed on AWS — React on S3 + CloudFront, the backend containerized on EC2, infrastructure in
+> Terraform, CI/CD with GitHub Actions."
 
-然后停下来，让面试官选方向追问。
+Then stop and let the interviewer pick a direction.
 
 ---
 
-## 二、简历怎么写（3–4 条 bullet）
+## 2. Resume bullets (3–4)
 
 ```
 DepWatch — Open-Source Dependency Vulnerability Tracker        Java 21, Spring Boot 3, Kafka, Redis, PostgreSQL, React, AWS
@@ -36,146 +39,146 @@ DepWatch — Open-Source Dependency Vulnerability Tracker        Java 21, Spring
   ECS Fargate production topology with Service Connect, RDS, ElastiCache and MSK Serverless.
 ```
 
-> 注意最后那个 "~90%" 之类的数字要是你自己测出来的。跑一次 demo，看 Redis 命中日志，算一下，别编。
+> Numbers like "~90%" must be ones you measured yourself. Run a demo, check the Redis hit logs, do the math. Don't make them up.
 
 ---
 
-## 三、必问问题 & 答法
+## 3. Questions you will be asked — and how to answer
 
-### Q1: 为什么要拆微服务？一个单体不行吗？
+### Q1: Why microservices? Wouldn't a monolith do?
 
-**诚实回答**：这个规模的项目单体完全够用，拆服务是为了练习和展示。但拆分边界不是随便切的：
-- project-service 是**同步、面向用户的 CRUD**，负载模式是请求-响应；
-- scan-service 是**异步、CPU 和 IO 密集的批处理**，一次扫描可能跑几分钟，需要独立扩缩容；
-- alert-service 持有 **WebSocket 长连接**，扩缩容和部署节奏跟前两者完全不同。
+**Honest answer**: at this scale a monolith would be fine; the split is for practice and to demonstrate the patterns. But the boundaries aren't arbitrary:
+- project-service is **synchronous, user-facing CRUD** — request/response load;
+- scan-service is **asynchronous, CPU- and IO-heavy batch work** — a scan can run for minutes and needs independent scaling;
+- alert-service holds **long-lived WebSocket connections** — a completely different scaling and deployment rhythm.
 
-三者的负载特征不同，这是拆分的真正理由。如果三者都是 CRUD，我就不拆。
+Different load profiles are the real reason to split. If all three were CRUD, I wouldn't.
 
-### Q2: 讲讲 Transactional Outbox，为什么需要它？
+### Q2: Explain the Transactional Outbox. Why is it needed?
 
-**问题**：用户上传后要（a）写 DB（b）发 Kafka。两个操作不在一个事务里：
-- 先发 Kafka 再写 DB：DB 失败 → scan-service 收到一个不存在的扫描请求；
-- 先写 DB 再发 Kafka：Kafka 失败 → 用户看到上传成功但永远没结果。
+**Problem**: after an upload we must (a) write to the DB and (b) publish to Kafka. Those aren't one transaction:
+- Kafka first, then DB: DB fails → scan-service receives a request for a scan that doesn't exist;
+- DB first, then Kafka: Kafka fails → the user sees "uploaded" but never gets a result.
 
-**解法**：把事件当业务数据，和 manifests 表在**同一个本地事务**里写进 outbox_events 表。
-后台 OutboxPublisher 每秒轮询未发布的行，发 Kafka，成功后标记。
+**Solution**: treat the event as business data. Write it to `outbox_events` **in the same local transaction** as the `manifests` row. A background `OutboxPublisher` polls unpublished rows every second, publishes, and marks them.
 
-**细节**（面试官会追）：
-- 多实例轮询会不会重复发？`SELECT ... FOR UPDATE SKIP LOCKED`，每个实例锁不同的行。
-- 发送成功但标记失败怎么办？会重发 → **at-least-once**，所以消费端必须幂等。
-- 延迟？1 秒轮询对这个场景够了。要更低延迟用 Debezium 做 CDC 读 WAL，但多一个组件。
-- 代码：`project-service/outbox/`
+**Follow-ups they'll ask**:
+- Multiple instances polling — duplicates? `SELECT ... FOR UPDATE SKIP LOCKED`; each instance locks different rows.
+- Publish succeeds but marking fails? It's re-sent → **at-least-once**, so consumers must be idempotent.
+- Latency? 1-second polling is fine here. For lower latency, Debezium CDC on the WAL — but that's another component.
+- Code: `project-service/outbox/`
 
-### Q3: 消费端怎么做幂等？
+### Q3: How do consumers stay idempotent?
 
-两种策略，分别用在两个服务里：
-- **scan-service**：业务主键天然幂等。scanId 由 project-service 生成，是 scans 表主键。重复事件进来一查已存在就跳过。
-- **alert-service**：事件没有天然业务键，用 **processed_events 表**记 eventId。关键是这个 INSERT 和告警写入在**同一个事务**里——要么都提交，要么都回滚。
-- 代码：`ScanProcessor.process()` 开头、`IdempotencyGuard`
+Two strategies, one per service:
+- **scan-service**: natural business key. The scanId is generated by project-service and is the primary key of `scans`. A duplicate event finds the row and skips.
+- **alert-service**: no natural key, so a **`processed_events` table** keyed by eventId. Crucially, that INSERT and the alert write happen in **the same transaction** — both commit or both roll back.
+- Code: top of `ScanProcessor.process()`, `IdempotencyGuard`
 
-### Q4: 为什么事件里不直接带文件内容？
+### Q4: Why doesn't the event carry the file contents?
 
-Kafka 默认消息上限 1 MB，一个中型 React 项目的 package-lock.json 轻松 2–5 MB。
-用 **Claim Check 模式**：文件存 S3（本地是共享卷），事件只带 key。
-顺便解耦了存储实现——`ManifestStorage` 接口两个实现，配置切换。
+Kafka's default message limit is 1 MB; a mid-size React project's lockfile is 2–5 MB.
+**Claim-Check pattern**: the file lives in S3 (a shared volume locally), the event carries only the key.
+It also decouples the storage implementation — `ManifestStorage` has two implementations switched by config.
 
-### Q5: 调 OSV 这种第三方 API 要注意什么？
+### Q5: What do you have to watch out for when calling a third-party API like OSV?
 
-三件事，对应 Resilience4j 三个注解（`OsvHttpClient`）：
-1. **RateLimiter**：它是免费公共服务，我们每秒最多 20 次。拿不到令牌就等，不是失败。
-2. **Retry**：网络抖动、5xx 重试，**指数退避**避免重试风暴；4xx 是我们的错，不重试。
-3. **CircuitBreaker**：OSV 挂了，失败率超 50% 直接熔断 30 秒。否则每个请求都等 30 秒超时，线程池很快被占满，整个 scan-service 跟着挂——这叫级联故障。
+Three things, mapped to three Resilience4j annotations (`OsvHttpClient`):
+1. **RateLimiter**: it's a free public service — max 20 req/s from us. If no token is available we wait, we don't fail.
+2. **Retry**: network blips and 5xx get retried with **exponential backoff** to avoid a retry storm; 4xx is our fault, no retry.
+3. **CircuitBreaker**: if OSV is down and the failure rate crosses 50%, open the circuit for 30 s. Otherwise every request waits for a 30 s timeout, the thread pool fills up, and the whole scan-service goes down with it — a cascading failure.
 
-另外 **Redis 缓存**漏洞详情 24 小时：lodash 的某个 CVE 会被几百个项目命中，没必要每次都问 OSV。
-缓存层放在 RateLimiter 外面，命中时不消耗令牌——这是一个顺序问题，`OsvClient` 注释里有说。
+Plus **Redis caching** of vulnerability details for 24 h: one lodash CVE is hit by hundreds of projects; no need to ask OSV each time.
+The cache sits *outside* the rate limiter so a cache hit doesn't consume a token — an ordering detail explained in the `OsvClient` comments.
 
-### Q6: 依赖图是怎么解析的？传递依赖怎么拿到？
+### Q6: How is the dependency graph parsed? Where do transitive dependencies come from?
 
-**npm**：package-lock.json v2/v3 的 `packages` 是扁平 map，key 是安装路径。难点是还原"谁依赖谁"：
-a 依赖 b，但 b 可能在 `node_modules/b`（提升了）也可能在 `node_modules/a/node_modules/b`（版本冲突被嵌套）。
-要**模拟 Node 的模块解析算法**：从 a 的路径开始逐级向上找 `node_modules/b`。这正是 npm hoisting 的逆过程。
-- 代码：`NpmLockfileParser.resolve()`，有单元测试覆盖嵌套冲突场景。
+**npm**: `packages` in a v2/v3 lockfile is a flat map keyed by install path. The hard part is reconstructing "who depends on whom":
+`a` depends on `b`, but `b` might be at `node_modules/b` (hoisted) or at `node_modules/a/node_modules/b` (nested due to a version conflict).
+You have to **simulate Node's module resolution**: starting from a's path, walk upward looking for `node_modules/b`. It's the inverse of npm hoisting.
+- Code: `NpmLockfileParser.resolve()`, with a unit test for the nested-conflict case.
 
-**Maven**：pom.xml 只有直接依赖，传递依赖要下载所有父 POM 和 BOM 做版本仲裁——等于重写 Maven。
-所以我选择让用户上传 `mvn dependency:tree` 的输出，用缩进 + 栈重建树。pom.xml 也支持但只做直接依赖，并明确提示用户。
-**这是一个有意识的取舍**：80% 的价值，5% 的复杂度。
+**Maven**: `pom.xml` only has direct dependencies; transitives require downloading every parent POM and BOM and running Maven's version mediation — effectively rewriting half of Maven.
+So I ask users to upload `mvn dependency:tree` output and rebuild the tree from indentation with a stack. `pom.xml` is still supported for direct deps, with a clear warning.
+**This is a deliberate trade-off**: 80% of the value for 5% of the complexity.
 
-**存储**：节点表 + 边表（邻接表）。"这个有漏洞的包是谁引进来的"用 BFS 算最短路径，按需计算不预存。
+**Storage**: node table + edge table (adjacency list). "Which package pulled in this vulnerable one?" is a BFS shortest path computed on demand, not precomputed.
 
-### Q7: 严重度怎么算的？
+### Q7: How is severity computed?
 
-OSV 返回的 `severity` 只有 CVSS 向量字符串（`CVSS:3.1/AV:N/AC:L/...`），**没有分数**。
-我实现了 CVSS 3.1 基础分公式（`CvssV3Calculator`），用 NVD 官方计算器的值做了参数化单元测试。
-优先级：GHSA 给的定性等级 > 自己算的 CVSS 分数映射 > UNKNOWN。
+OSV's `severity` field holds only a CVSS vector string (`CVSS:3.1/AV:N/AC:L/...`) — **no numeric score**.
+I implemented the CVSS 3.1 base-score formula (`CvssV3Calculator`) and verified it with parameterized tests against NVD's official calculator.
+Priority: GHSA's qualitative label > computed CVSS score mapping > UNKNOWN.
 
-### Q8: 怎么保证"持续监控"？定时任务多实例怎么办？
+### Q8: How does "continuous monitoring" work? What about multiple instances?
 
-每天凌晨 `RescanScheduler` 对每个项目最新一次扫描的依赖列表**重新查 OSV**（不重新解析文件），
-和上次结果 diff，只对**新增**的漏洞发告警。昨天干净的包今天出 CVE 是常态，这就是产品的核心价值。
+Every night `RescanScheduler` takes each project's latest scan and **re-queries OSV with the stored dependency list** (no re-parsing),
+diffs against the previous result, and alerts only on **new** findings. A clean package getting a CVE overnight is routine — that's the product's core value.
 
-多实例：`@Scheduled` 每个实例都会触发。用 **ShedLock** 在 DB 里加分布式锁，`lockAtLeastFor` 防止时钟偏差导致重复执行。
-为什么不用 Quartz 集群？重。为什么不用 Redis 锁？多一个故障点，而且 DB 本来就有。
+Multiple instances: `@Scheduled` fires on every replica. **ShedLock** takes a distributed lock in the DB; `lockAtLeastFor` guards against clock skew causing a double run.
+Why not clustered Quartz? Too heavy. Why not a Redis lock? Another failure point, and the DB is already there.
 
-### Q9: 网关做了什么？下游为什么信任 X-User-Id？
+### Q9: What does the gateway do? Why do downstream services trust `X-User-Id`?
 
-网关：JWT 校验、限流（Redis 令牌桶，按用户维度）、CORS、WebSocket 代理。
-校验通过后把用户 ID 放 `X-User-Id` 头转发。下游服务直接读这个头，不再解 JWT。
+Gateway: JWT verification, rate limiting (Redis token bucket, per user), CORS, WebSocket proxying.
+After verifying, it forwards the user ID in `X-User-Id`. Downstream reads the header and never parses the JWT again.
 
-**前提**：下游不能从公网访问（安全组 / 私有子网），**且网关必须剥离客户端自带的 X-User-* 头**——否则谁都能伪造身份。
-代码里 `JwtAuthGlobalFilter` 第一件事就是 remove 这两个头。
+**Preconditions**: downstream must not be reachable from the internet (security groups / private subnet), **and the gateway must strip client-supplied X-User-* headers** — otherwise anyone can impersonate anyone.
+The first thing `JwtAuthGlobalFilter` does is remove those two headers.
 
-**替代方案**：每个服务都校验 JWT（更安全但重复）、mTLS（更安全但运维复杂）。对这个规模，网关信任模型是合理的。
+**Alternatives**: every service verifies the JWT (safer, redundant), mTLS (safer, operationally heavier). At this scale the gateway-trust model is reasonable.
 
-### Q10: WebSocket 怎么鉴权？多实例怎么办？
+### Q10: How is the WebSocket authenticated? What about multiple instances?
 
-浏览器 WebSocket API 不能设 header，JWT 放 `?token=` 查询参数，网关在握手时校验。
+Browsers can't set headers on WebSocket, so the JWT goes in `?token=`; the gateway verifies it during the handshake.
 
-多实例问题：alert-service 用的是内存 SimpleBroker，用户连在 A 实例上，事件被 B 实例消费，推不到。
-解法：(1) 粘性会话 + 每个实例都消费 progress 事件（不同 consumer group）；(2) 换成外部 STOMP broker（RabbitMQ）。
-**我目前是单实例，但知道这个问题和解法**——这句话很重要，说明你想过。
+Multi-instance problem: alert-service uses an in-memory SimpleBroker. If the user is connected to instance A but instance B consumes the event, the push never arrives.
+Fixes: (1) sticky sessions + every instance consumes progress events with its own consumer group; (2) swap in an external STOMP broker (RabbitMQ).
+**"I run a single instance today, but I know the problem and the fixes"** — that sentence matters; it shows you thought about it.
 
-### Q11: 为什么没用 Eureka / Spring Cloud Config / Feign？
+### Q11: Why no Eureka / Spring Cloud Config / Feign?
 
-- **Eureka**：Docker Compose、ECS、K8s 都自带 DNS 服务发现。Eureka 是没有编排平台时代的方案。
-- **Config Server**：环境变量 + Secrets Manager 够了，12-factor。
-- **Feign**：服务间没有同步 HTTP 调用——全部走 Kafka 异步。这是刻意的：同步调用会让 scan-service 的慢拖累 project-service。
+- **Eureka**: Docker Compose, ECS and Kubernetes all have DNS-based discovery built in. Eureka solves a pre-orchestrator problem.
+- **Config Server**: environment variables + Secrets Manager are enough; twelve-factor.
+- **Feign**: there are no synchronous HTTP calls between services — everything goes through Kafka. Deliberately: a synchronous call would let a slow scan-service drag down project-service.
 
-能说出"为什么不用"比"用了"更能体现判断力。
+Explaining *why not* shows more judgment than listing what you used.
 
-### Q12: 测试策略？
+### Q12: Testing strategy?
 
-- 单元测试集中在**纯逻辑、高风险**的地方：三个解析器、CVSS 计算、版本比较。这些错了整个结果就错了。
-- 集成测试（可以加）：Testcontainers 起 Postgres + Kafka，端到端跑一次上传 → 扫描 → 告警。
-- 没有给 Controller 写测试，因为它们只是转发。
+- Unit tests concentrate on **pure, high-risk logic**: the three parsers, CVSS scoring, version comparison. If those are wrong, every result is wrong.
+- Integration tests (could add): Testcontainers for Postgres + Kafka, one end-to-end upload → scan → alert run.
+- No controller tests; they only delegate.
 
-### Q13: 遇到的最难的 bug / 最大的坑？
+### Q13: Hardest bug / biggest gotcha?
 
-准备 2 个你**真实**遇到的。可能的候选：
-- npm 嵌套依赖解析搞错了，先按名字全局查找，发现 a 依赖的 b 版本不对；
-- Spring Cache 和 Resilience4j 注解的执行顺序，缓存命中还在消耗限流令牌；
-- Kafka 消费者 `max.poll.interval.ms` 默认 5 分钟，大项目扫描超时被踢出消费组，导致重复消费。
-
----
-
-## 四、可以主动聊的扩展方向
-
-- **SBOM**（CycloneDX/SPDX）支持——行业标准，美国政府采购要求
-- **GitHub App**：自动拉仓库 lockfile，PR 上评论新引入的漏洞（Dependabot 的核心体验）
-- **OpenTelemetry**：一次上传跨 3 个服务 + Kafka，分布式追踪能看到完整链路
-- **KEDA** 按 Kafka lag 自动扩缩 scan-service
-- **可达性分析**：漏洞函数在我的代码里有没有被调用？（Snyk 的高级功能，难）
+Prepare two that **actually happened to you**. Candidates:
+- npm nested-dependency resolution was wrong at first — a global name lookup picked the wrong version of `b` for `a`;
+- Spring Cache vs. Resilience4j annotation ordering — cache hits were still consuming rate-limiter tokens;
+- Kafka's `max.poll.interval.ms` defaults to 5 minutes; a big project's scan exceeded it, the consumer got kicked from the group, and the message was redelivered;
+- CI failed on first push: AssertJ's string-based `extracting("id")` didn't resolve record accessors on the CI JDK, and the frontend job had no lockfile to cache. Fixed with method references and a committed `package-lock.json`.
 
 ---
 
-## 五、Demo 演示脚本（3 分钟）
+## 4. Extensions worth bringing up
 
-1. 打开前端，登录（提前注册好）
-2. 展示两个项目的概览卡片，严重度条
-3. 新建项目，拖入 `scripts/samples/package-lock.json`
-4. **指着实时进度条讲**：Parsing → Querying（这里在调 OSV）→ Enriching → Diffing
-5. 自动跳到结果页：讲 stats、点一个 CRITICAL finding 打开抽屉，讲 fixed version 和引入路径
-6. 切到 Dependency graph tab，点一个 transitive 包的 "why?"
-7. Alerts 页：刚才的告警已经在了（实时推送来的）；展示规则配置
-8. 如果时间够：打开 Kafka UI 看 4 个 topic 的消息；打开 `/actuator/circuitbreakers`
+- **SBOM** (CycloneDX / SPDX) support — industry standard, required in US government procurement
+- **GitHub App**: pull lockfiles from repos automatically, comment on PRs that introduce vulnerabilities (the Dependabot experience)
+- **OpenTelemetry**: one upload crosses 3 services + Kafka; distributed tracing makes the whole path visible
+- **KEDA** autoscaling of scan-service on Kafka lag
+- **Reachability analysis**: is the vulnerable function actually called from my code? (Snyk's premium feature — hard)
 
-演示前把 Docker 起好、注册好账号、确认 OSV 能访问。**录一个备用视频**以防网络问题。
+---
+
+## 5. Demo script (3 minutes)
+
+1. Open the frontend, log in (register beforehand)
+2. Show the two project cards with severity bars
+3. Create a project, drag in `scripts/samples/package-lock.json`
+4. **Narrate the live progress bar**: Parsing → Querying (this is calling OSV) → Enriching → Diffing
+5. It auto-navigates to results: walk through the stats, open a CRITICAL finding, show fixed version and the dependency path
+6. Switch to the Dependency graph tab, click **why?** on a transitive package
+7. Alerts page: the alert from that scan is already there (pushed live); show the rule settings
+8. If time allows: Kafka UI showing the four topics; `/actuator/circuitbreakers`
+
+Before the demo: Docker up, account registered, OSV reachable. **Record a backup video** in case the network fails.

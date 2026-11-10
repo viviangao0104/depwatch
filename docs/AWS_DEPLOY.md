@@ -1,84 +1,86 @@
-# AWS 部署指南
+# AWS Deployment Guide
 
-两条路线，按预算和简历目标选：
+Two routes — pick by budget and by what you want on your resume:
 
-| | 方案 A：单台 EC2 + Docker Compose | 方案 B：ECS Fargate 全托管 |
+| | Option A: one EC2 + Docker Compose | Option B: ECS Fargate, fully managed |
 |---|---|---|
-| 月成本 | **≈ $12–25**（t4g.medium 按需 + S3 + 少量流量；用 Spot 更便宜） | ≈ $120–200（Fargate × 4 + RDS + ElastiCache + MSK Serverless + ALB） |
-| 简历关键词 | EC2, S3, CloudFront, ECR, IAM, Security Group, GitHub Actions | 以上 + ECS/Fargate, ALB, RDS, ElastiCache, MSK, Terraform, Secrets Manager |
-| 适合 | 先跑起来、面试演示、长期挂着 | 想把"生产级云架构"讲透；可以部署完截图/录屏后销毁 |
-| 本仓库提供 | `infra/aws/terraform/`（完整） + `scripts/deploy-ec2.sh` | `infra/aws/ecs/`（任务定义模板 + 架构说明） |
+| Monthly cost | **≈ $12–25** (t4g.medium on-demand + S3 + light traffic; cheaper with Spot) | ≈ $120–200 (4× Fargate + RDS + ElastiCache + MSK Serverless + ALB) |
+| Resume keywords | EC2, S3, CloudFront, ECR, IAM, Security Groups, GitHub Actions | all of those + ECS/Fargate, ALB, RDS, ElastiCache, MSK, Terraform, Secrets Manager |
+| Best for | getting it live, interview demos, leaving it running | explaining a production-grade cloud topology; deploy, screenshot/record, then tear down |
+| In this repo | `infra/aws/terraform/` (complete) + `scripts/deploy-ec2.sh` | `infra/aws/ecs/` (task-definition templates + notes) |
 
-> **先做 A，再按需做 B。** 两者前端部分（S3 + CloudFront）完全一样。
-> 面试时你可以说："开发/演示环境跑在一台 EC2 上用 Compose 编排，生产形态我设计成 ECS Fargate，任务定义在仓库里。"
+> **Do A first, then B if you want.** The frontend part (S3 + CloudFront) is identical in both.
+> In an interview: "The dev/demo environment runs on a single EC2 with Compose; the production shape I designed is ECS Fargate — the task definitions are in the repo."
+
+[中文版](AWS_DEPLOY.zh-CN.md)
 
 ---
 
-## 0. 前置准备（两种方案都需要）
+## 0. Prerequisites (both options)
 
 ```bash
-aws configure                                  # 用 IAM 用户的 key，不要用 root
-aws sts get-caller-identity                    # 确认
+aws configure                                  # use an IAM user's key, never root
+aws sts get-caller-identity                    # verify
 export AWS_REGION=us-east-1
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ```
 
-**务必先设预算告警**：Billing → Budgets → 创建 $20/月预算，80% 时邮件提醒。学生忘关资源被扣几百刀的事太多了。
+**Set a budget alert first**: Billing → Budgets → $20/month, email at 80%. Students forgetting to tear down resources and getting a $300 bill is a cliché for a reason.
 
 ---
 
-## 方案 A：EC2 + Docker Compose + S3/CloudFront
+## Option A: EC2 + Docker Compose + S3/CloudFront
 
-### A.1 架构
+### A.1 Architecture
 
 ```
-Browser ─▶ CloudFront ─▶ S3 (前端静态文件)
+Browser ─▶ CloudFront ─▶ S3 (frontend static files)
    │
-   └─/api,/ws─▶ EC2 公网 IP:8080 (gateway) ─▶ 同机 Compose 内的其他服务 + Postgres/Redis/Kafka
+   └─/api,/ws─▶ EC2 public IP:8080 (gateway) ─▶ other services + Postgres/Redis/Kafka in Compose on the same host
                      │
-                     └─ manifest 文件 → S3 bucket (IAM Instance Profile，无需 AK/SK)
+                     └─ manifest files → S3 bucket (IAM Instance Profile — no access keys in code)
 ```
 
-### A.2 用 Terraform 创建资源
+### A.2 Create resources with Terraform
 
 ```bash
 cd infra/aws/terraform
-cp terraform.tfvars.example terraform.tfvars    # 填 key pair 名、你的公网 IP
+cp terraform.tfvars.example terraform.tfvars    # fill in key pair name, your public IP
 terraform init
 terraform plan
-terraform apply                                   # ≈ 3 分钟
+terraform apply                                   # ≈ 3 minutes
 ```
 
-创建了：
-- 1 台 EC2（Amazon Linux 2023，arm64 t4g.medium，自动安装 Docker）
-- 安全组：22 只允许你的 IP；8080 对 CloudFront/公网开放
-- IAM Role + Instance Profile：允许读写 manifest bucket、拉 ECR 镜像
-- 2 个 S3 bucket：前端静态站点、manifest 存储（私有）
-- CloudFront 分发：`/` → S3，`/api/*` 和 `/ws*` → EC2
-- 4 个 ECR 仓库
+This creates:
+- 1 EC2 instance (Amazon Linux 2023, arm64 t4g.medium, Docker installed via user-data)
+- Security group: port 22 only from your IP; 8080 open for CloudFront/public
+- IAM role + instance profile: read/write the manifest bucket, pull from ECR
+- 2 S3 buckets: frontend static site, private manifest storage
+- CloudFront distribution: `/` → S3, `/api/*` and `/ws*` → EC2
+- 4 ECR repositories
 
-输出里有 `ec2_public_ip`、`cloudfront_domain`、`ecr_registry`。
+Outputs include `ec2_public_ip`, `cloudfront_domain`, `ecr_registry`.
 
-### A.3 构建并推送镜像
+### A.3 Build and push images
 
 ```bash
 aws ecr get-login-password | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-# Apple Silicon 上构建 arm64 镜像给 t4g 用（如果用 t3 x86 实例，改成 --platform linux/amd64）
+# Build arm64 images on Apple Silicon for t4g (use --platform linux/amd64 for a t3 x86 instance)
 for m in gateway project-service scan-service alert-service; do
   docker build --platform linux/arm64 --build-arg MODULE=$m -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/depwatch/$m:latest backend/
   docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/depwatch/$m:latest
 done
 ```
 
-或直接用 `scripts/deploy-ec2.sh`，它会做完上面所有事 + 部署。
+Or run `scripts/deploy-ec2.sh`, which does all of the above plus deployment.
 
-### A.4 在 EC2 上启动
+### A.4 Start on EC2
 
 ```bash
 ssh -i ~/.ssh/your-key.pem ec2-user@$(terraform output -raw ec2_public_ip)
 
-# 拉取生产 compose 文件（deploy 脚本会 scp 上去），然后：
+# the deploy script scp's the production compose file; then:
 export DEPWATCH_JWT_SECRET=$(openssl rand -base64 48)
 export DEPWATCH_S3_BUCKET=<terraform output manifest_bucket>
 export ECR=<terraform output ecr_registry>
@@ -86,9 +88,9 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-`docker-compose.prod.yml` 和开发版的区别：用 ECR 镜像而非本地 build、storage type=s3、不暴露 DB/Kafka 端口、加 `restart: always`。
+`docker-compose.prod.yml` differs from the dev file: ECR images instead of local builds, storage type = s3, no exposed DB/Kafka ports, `restart: always`, logs shipped to CloudWatch.
 
-### A.5 部署前端
+### A.5 Publish the frontend
 
 ```bash
 cd frontend
@@ -97,54 +99,54 @@ aws s3 sync dist/ s3://$(terraform -chdir=../infra/aws/terraform output -raw fro
 aws cloudfront create-invalidation --distribution-id $(terraform -chdir=../infra/aws/terraform output -raw cloudfront_id) --paths "/*"
 ```
 
-打开 `https://<cloudfront_domain>` 即可。
+Open `https://<cloudfront_domain>`.
 
-### A.6 HTTPS 和自定义域名（可选，$12/年）
+### A.6 HTTPS and a custom domain (optional, ~$12/year)
 
-Route 53 买个域名 → ACM 申请证书（us-east-1）→ CloudFront 绑定别名。Terraform 里有注释掉的配置块。
+Buy a domain in Route 53 → request an ACM certificate (us-east-1) → attach it as a CloudFront alias. The Terraform has the relevant block commented out.
 
 ---
 
-## 方案 B：ECS Fargate（生产形态）
+## Option B: ECS Fargate (production shape)
 
-### B.1 架构
+### B.1 Architecture
 
 ```
-Internet ─▶ CloudFront ─▶ S3 (前端)
+Internet ─▶ CloudFront ─▶ S3 (frontend)
                 │
                 └─/api─▶ ALB (HTTPS) ─▶ ECS Service: gateway (2 tasks)
-                                            │ Service Connect (DNS: project-service.depwatch.local ...)
+                                            │ Service Connect (DNS: project-service.depwatch.local …)
                               ┌─────────────┼─────────────┐
-                        project-service  scan-service  alert-service      ← 私有子网，无公网 IP
+                        project-service  scan-service  alert-service      ← private subnets, no public IP
                               │              │              │
-                        RDS Postgres (Multi-AZ 可选)   ElastiCache Redis   MSK Serverless
+                        RDS Postgres (Multi-AZ optional)  ElastiCache Redis   MSK Serverless
                               └── manifests → S3 ──┘
-                        Secrets Manager: JWT secret, DB password → 注入为环境变量
-                        CloudWatch Logs: 每个服务一个 log group
+                        Secrets Manager: JWT secret, DB password → injected as env vars
+                        CloudWatch Logs: one log group per service
 ```
 
-### B.2 关键决策
+### B.2 Key decisions
 
-| 问题 | 选择 | 理由 |
+| Question | Choice | Why |
 |---|---|---|
-| 服务发现 | ECS Service Connect | 内置 DNS + Envoy sidecar，不需要 Eureka；比 Cloud Map 多了重试和指标 |
-| Kafka | MSK Serverless | 按量付费，不用的时候几乎 $0；传统 MSK 最少 2 broker ≈ $150/月 |
-| 密钥 | Secrets Manager → 任务定义 `secrets` | 密钥不进镜像、不进环境变量明文、不进 Git |
-| 扩缩容 | scan-service 按 Kafka consumer lag 的 CloudWatch 指标 | 上传高峰自动加 task，闲时缩到 1 |
-| 数据库 | 一个 RDS 实例三个 database | 省钱；真到了要独立扩容再拆实例 |
-| 健康检查 | ALB → `/actuator/health/readiness` | Boot 的 probes.enabled=true 区分 liveness / readiness |
+| Service discovery | ECS Service Connect | Built-in DNS + Envoy sidecar; no Eureka; adds retries and metrics over Cloud Map |
+| Kafka | MSK Serverless | Pay per use, ~$0 when idle; classic MSK needs ≥ 2 brokers ≈ $150/month |
+| Secrets | Secrets Manager → task-definition `secrets` | Secrets never in images, plain env vars, or Git |
+| Autoscaling | scan-service on Kafka consumer lag (CloudWatch metric) | Scale out on upload bursts, back to 1 when idle |
+| Database | one RDS instance, three databases | Saves money; split instances only when independent scaling is actually needed |
+| Health checks | ALB → `/actuator/health/readiness` | Spring Boot's `probes.enabled=true` separates liveness from readiness |
 
-### B.3 任务定义模板
+### B.3 Task-definition templates
 
-见 `infra/aws/ecs/task-definitions/*.json`。替换 `<ACCOUNT_ID>`、`<REGION>`、secret ARN 后：
+See `infra/aws/ecs/task-definitions/*.json`. Replace `<ACCOUNT_ID>`, `<REGION>` and the secret ARNs, then:
 
 ```bash
 aws ecs register-task-definition --cli-input-json file://infra/aws/ecs/task-definitions/scan-service.json
 ```
 
-### B.4 用 Copilot 省事（推荐给个人项目）
+### B.4 Shortcut: AWS Copilot (recommended for a personal project)
 
-AWS Copilot CLI 能用几条命令生成上面整套（VPC、ALB、ECS、Service Connect、日志）：
+Copilot generates the whole stack (VPC, ALB, ECS, Service Connect, logging) from a few commands:
 
 ```bash
 brew install aws/tap/copilot-cli
@@ -152,40 +154,40 @@ copilot app init depwatch
 copilot env init --name prod
 copilot svc init --name gateway --svc-type "Load Balanced Web Service" --dockerfile backend/Dockerfile
 copilot svc init --name scan-service --svc-type "Backend Service" --dockerfile backend/Dockerfile
-# ... 其余服务同理，然后
+# … same for the other services, then
 copilot svc deploy --name gateway --env prod
 ```
 
-RDS / ElastiCache / MSK 用 `copilot storage init` 或 Terraform 另建，连接串通过 `copilot secret init` 注入。
+Create RDS / ElastiCache / MSK with `copilot storage init` or Terraform, and inject connection strings via `copilot secret init`.
 
 ---
 
-## CI/CD（GitHub Actions）
+## CI/CD (GitHub Actions)
 
-`.github/workflows/ci.yml`：
-1. PR → 跑 `mvn verify`（含单元测试）和 `npm run build`
-2. push 到 `main` → 构建 4 个镜像推 ECR（用 OIDC 联邦身份，**不在 GitHub 存 AWS key**）→ SSH 到 EC2 执行 `docker compose pull && up -d` → 前端同步到 S3 + CloudFront 失效
+`.github/workflows/ci.yml`:
+1. On PR → `mvn verify` (with unit tests) and `npm run build`
+2. On push to `main` with the repository variable `DEPLOY_ENABLED=true` → build 4 images and push to ECR (via OIDC federation — **no AWS keys stored in GitHub**) → roll out on EC2 through SSM `docker compose pull && up -d` → sync the frontend to S3 + invalidate CloudFront
 
-OIDC 配置：在 IAM 里创建 Identity Provider `token.actions.githubusercontent.com`，再建一个 Role 信任你的仓库。Terraform 里有这个 Role（`github_actions_role`），输出 ARN 后填到 GitHub repo 的 Secrets `AWS_ROLE_ARN`。
-
----
-
-## 成本控制清单
-
-- [ ] Budget 告警已设
-- [ ] 演示完不用时：`terraform destroy`（方案 A 全部资源 1 分钟销毁，数据丢失；要保留数据先 `aws s3 sync` 备份）
-- [ ] 或者只停 EC2：`aws ec2 stop-instances --instance-ids ...`（停机不收计算费，只收 EBS ≈ $2/月）
-- [ ] MSK Serverless / RDS 如果用了方案 B，**一定**记得删，这两个是大头
-- [ ] CloudFront 和 S3 几乎免费（免费额度内）
+OIDC setup: create the Identity Provider `token.actions.githubusercontent.com` in IAM and a role that trusts your repo. Terraform creates this role (`github_actions_role`); put its ARN in the repo secret `AWS_ROLE_ARN`, plus `EC2_INSTANCE_ID`, `FRONTEND_BUCKET`, `CLOUDFRONT_ID`.
 
 ---
 
-## 常见问题
+## Cost-control checklist
 
-**EC2 上 Kafka 起不来 / OOM**：t4g.small（2 GB）不够，至少 t4g.medium（4 GB）。或者把 Kafka 的 `KAFKA_HEAP_OPTS=-Xmx512m` 加到 compose。
+- [ ] Budget alert set
+- [ ] When not demoing: `terraform destroy` (Option A tears down in a minute; data is lost — `aws s3 sync` a backup first if you care)
+- [ ] Or just stop the instance: `aws ec2 stop-instances --instance-ids …` (no compute charge while stopped; EBS ≈ $2/month)
+- [ ] If you used Option B, **delete MSK Serverless and RDS** — they're the big-ticket items
+- [ ] CloudFront and S3 are effectively free within the free tier
 
-**CloudFront 返回 502 for /api**：源站协议要选 HTTP only（EC2 上没证书），端口 8080；检查安全组 8080 入站。
+---
 
-**WebSocket 连不上**：CloudFront 需要把 `/ws*` 行为的缓存策略设为 CachingDisabled，源请求策略 AllViewer；Terraform 已配置。
+## FAQ
 
-**上传 lockfile 报 413**：CloudFront 默认请求体上限 20 MB 够用；Nginx/网关的限制在配置里已调到 25 MB。
+**Kafka won't start on EC2 / OOM**: t4g.small (2 GB) is too small; use at least t4g.medium (4 GB), or add `KAFKA_HEAP_OPTS=-Xmx512m` to compose.
+
+**CloudFront returns 502 for /api**: the origin protocol must be HTTP only (no certificate on EC2), port 8080; check the security group allows 8080 inbound.
+
+**WebSocket won't connect**: the `/ws*` behavior in CloudFront needs the CachingDisabled cache policy and the AllViewer origin-request policy — the Terraform already sets both.
+
+**Upload returns 413**: CloudFront's default request-body limit is 20 MB, plenty; the Nginx/gateway limits are already raised to 25 MB.

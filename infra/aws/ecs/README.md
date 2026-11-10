@@ -1,7 +1,6 @@
-# ECS Fargate 方案（方案 B）说明
+# ECS Fargate (Option B) notes
 
-`task-definitions/scan-service.json` 是模板；gateway / project-service / alert-service 只需改名字、端口（8080/8081/8083）、
-数据库名和 task role。gateway 额外去掉 Kafka 相关环境变量，加 `DEPWATCH_ROUTES_*`，指向 Service Connect 的 DNS 名：
+`task-definitions/scan-service.json` is the template. gateway / project-service / alert-service differ only in name, port (8080 / 8081 / 8083), database name and task role. The gateway additionally drops the Kafka variables and adds `DEPWATCH_ROUTES_*` pointing at the Service Connect DNS names:
 
 ```
 DEPWATCH_ROUTES_PROJECT=http://project-service.depwatch.local:8081
@@ -10,18 +9,18 @@ DEPWATCH_ROUTES_ALERT=http://alert-service.depwatch.local:8083
 DEPWATCH_ROUTES_ALERT_WS=ws://alert-service.depwatch.local:8083
 ```
 
-## 需要的 IAM Role
+## IAM roles required
 
-| Role | 作用 | 权限 |
+| Role | Purpose | Permissions |
 |---|---|---|
-| `depwatch-ecs-execution` | ECS agent 拉镜像、写日志、读 Secrets | `AmazonECSTaskExecutionRolePolicy` + `secretsmanager:GetSecretValue` |
-| `depwatch-scan-service-task` | 容器内代码的身份 | S3 读 manifest bucket；MSK IAM 认证（`kafka-cluster:Connect/ReadData/WriteData/...`） |
-| `depwatch-project-service-task` | 同上 | S3 读写 manifest bucket；MSK 写 |
-| `depwatch-alert-service-task` | 同上 | MSK 读 |
+| `depwatch-ecs-execution` | ECS agent pulls images, writes logs, reads secrets | `AmazonECSTaskExecutionRolePolicy` + `secretsmanager:GetSecretValue` |
+| `depwatch-scan-service-task` | identity of the code inside the container | S3 read on the manifest bucket; MSK IAM auth (`kafka-cluster:Connect/ReadData/WriteData/…`) |
+| `depwatch-project-service-task` | same | S3 read/write on the manifest bucket; MSK write |
+| `depwatch-alert-service-task` | same | MSK read |
 
-## MSK IAM 认证
+## MSK IAM authentication
 
-MSK Serverless 只支持 IAM 认证。scan-service 的 pom 需要加：
+MSK Serverless supports IAM auth only. Add to each service's pom:
 
 ```xml
 <dependency>
@@ -32,17 +31,16 @@ MSK Serverless 只支持 IAM 认证。scan-service 的 pom 需要加：
 </dependency>
 ```
 
-然后任务定义里的 `SPRING_KAFKA_PROPERTIES_*` 环境变量会被 Spring Boot 映射成 `spring.kafka.properties.*`。
+The `SPRING_KAFKA_PROPERTIES_*` environment variables in the task definition map to `spring.kafka.properties.*`.
 
-## 自动扩缩容（scan-service）
+## Autoscaling scan-service
 
-Kafka consumer lag 没有现成的 CloudWatch 指标（MSK Serverless 有 `SumOffsetLag`，按消费组维度）。
-在 Application Auto Scaling 里创建 Target Tracking 策略：目标 `SumOffsetLag` ≤ 100，min 1 / max 5 task。
+There is no ready-made CloudWatch metric for consumer lag in classic Kafka, but MSK Serverless exposes `SumOffsetLag` per consumer group. Create an Application Auto Scaling target-tracking policy: target `SumOffsetLag` ≤ 100, min 1 / max 5 tasks.
 
-## 把 WebSocket 变成多实例安全
+## Making WebSocket safe across replicas
 
-alert-service 跑多副本后，内存 SimpleBroker 只能推给连到自己这台的客户端。两个解法：
-1. **ALB 粘性会话** + 让 scan.progress 事件通过 Kafka 广播（每个副本都消费一份，用不同 group id）——改动最小；
-2. 换 `enableStompBrokerRelay()` 接 Amazon MQ (RabbitMQ)——标准做法，多一个组件。
+Once alert-service runs more than one replica, the in-memory SimpleBroker can only push to clients connected to *that* replica. Two fixes:
+1. **ALB sticky sessions** + broadcast `scan.progress` through Kafka with a distinct consumer group per replica — smallest change;
+2. Switch to `enableStompBrokerRelay()` backed by Amazon MQ (RabbitMQ) — the standard answer, one more component.
 
-面试时能讲出这个问题及两种解法，比直接用方案 2 更能体现思考。
+Being able to name the problem and both fixes in an interview is worth more than silently picking option 2.

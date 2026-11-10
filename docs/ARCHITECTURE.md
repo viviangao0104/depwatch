@@ -1,185 +1,185 @@
-# DepWatch 架构设计
+# DepWatch — Architecture
 
-> 开源依赖漏洞追踪平台：上传 `package-lock.json` / `pom.xml` / `mvn dependency:tree` 输出，
-> 系统解析完整依赖图，比对 [OSV](https://osv.dev) 漏洞数据库，持续监控并实时推送新漏洞。
+> Open-source dependency vulnerability tracker: upload `package-lock.json` / `pom.xml` / `mvn dependency:tree` output,
+> the system parses the full dependency graph, matches it against [OSV](https://osv.dev), keeps monitoring daily, and pushes new vulnerabilities in real time.
+
+[中文版](ARCHITECTURE.zh-CN.md)
 
 ---
 
-## 1. 整体架构
+## 1. System overview
 
 ```
                         ┌─────────────────────────────────────────────────────────────┐
                         │                         AWS                                 │
-  Browser ──HTTPS──▶ CloudFront ──▶ S3 (React 静态站点)                                │
+  Browser ──HTTPS──▶ CloudFront ──▶ S3 (React static site)                            │
      │                                                                                │
      └──/api, /ws──▶ ALB ──▶ ┌──────────────┐                                        │
                              │   gateway    │  Spring Cloud Gateway                   │
-                             │  :8080       │  · JWT 校验 → 注入 X-User-Id            │
-                             └──┬───┬───┬───┘  · Redis 令牌桶限流  · CORS · WS 代理    │
+                             │  :8080       │  · verifies JWT → injects X-User-Id     │
+                             └──┬───┬───┬───┘  · Redis token-bucket rate limit · CORS · WS proxy
                  ┌──────────────┘   │   └──────────────┐                              │
                  ▼                  ▼                  ▼                              │
         ┌────────────────┐ ┌────────────────┐ ┌────────────────┐                      │
         │project-service │ │  scan-service  │ │ alert-service  │                      │
         │ :8081          │ │  :8082         │ │ :8083          │                      │
-        │ 用户/JWT 签发   │ │ manifest 解析   │ │ 告警规则        │                      │
-        │ 项目 CRUD       │ │ 依赖图构建      │ │ 事件去重        │                      │
-        │ manifest 上传   │ │ OSV 批量查询    │ │ WebSocket 推送  │                      │
-        │ Outbox 发件箱   │ │ 增量 diff       │ │ Webhook/Email   │                      │
-        │                │ │ 定时重扫        │ │                │                      │
+        │ users / JWT    │ │ manifest parse │ │ alert rules    │                      │
+        │ project CRUD   │ │ dependency graph│ │ event dedup   │                      │
+        │ manifest upload│ │ OSV batch query│ │ WebSocket push │                      │
+        │ outbox         │ │ incremental diff│ │ webhook / email│                     │
+        │                │ │ daily rescan   │ │                │                      │
         └───┬────────┬───┘ └──┬───────┬──┬──┘ └──────┬─────────┘                      │
-            │        │        │       │  │           │                                │
             ▼        │        ▼       │  ▼           ▼                                │
      ┌───────────┐   │  ┌──────────┐  │ ┌──────────────┐                              │
-     │ Postgres  │   │  │ Postgres │  │ │  Postgres    │   (RDS，database-per-service) │
+     │ Postgres  │   │  │ Postgres │  │ │  Postgres    │   (RDS, database-per-service)│
      │ _project  │   │  │ _scan    │  │ │  _alert      │                              │
      └───────────┘   │  └──────────┘  │ └──────────────┘                              │
-                     │                │                                               │
                      ▼                ▼                                               │
               ┌─────────────┐   ┌──────────┐    ┌──────────────────┐                  │
               │ S3 (manifest│   │  Redis   │    │  Kafka (MSK)     │                  │
-              │  文件存储)   │   │ 缓存/限流 │    │  4 个 topic      │                  │
+              │  storage)   │   │cache/rate│    │  4 topics        │                  │
               └─────────────┘   └──────────┘    └──────────────────┘                  │
                                                         ▲                             │
                                               ┌─────────┴─────────┐                   │
-                                              │  api.osv.dev      │  (外部)           │
+                                              │  api.osv.dev      │  (external)       │
                                               └───────────────────┘                   │
                         └─────────────────────────────────────────────────────────────┘
 ```
 
-本地开发用 Docker Compose 跑同一套拓扑：Postgres / Redis / Kafka(KRaft) / 4 个 Java 服务 / Nginx 前端。
+Local development runs the same topology with Docker Compose: Postgres / Redis / Kafka (KRaft) / 4 Java services / Nginx frontend.
 
 ---
 
-## 2. 核心流程
+## 2. Core flows
 
-### 2.1 上传 → 扫描 → 推送（主链路）
+### 2.1 Upload → scan → notify (main path)
 
 ```
  1. POST /api/projects/{id}/manifests  (multipart)
       project-service
-        ├─ 存文件到 ManifestStorage (本地磁盘 / S3)
-        ├─ 在同一个 DB 事务里：insert manifests + insert outbox_events(ScanRequested)
-        └─ 立即返回 scanId  ← 前端马上订阅 /topic/scans/{scanId}
+        ├─ stores the file via ManifestStorage (local disk / S3)
+        ├─ in ONE DB transaction: insert manifests + insert outbox_events(ScanRequested)
+        └─ returns scanId immediately  ← frontend subscribes to /topic/scans/{scanId} right away
 
- 2. OutboxPublisher (每秒轮询, SELECT ... FOR UPDATE SKIP LOCKED)
-        └─ 发送 Kafka topic: scan.requested   key = projectId
+ 2. OutboxPublisher (polls every second, SELECT ... FOR UPDATE SKIP LOCKED)
+        └─ publishes to Kafka topic scan.requested   key = projectId
 
- 3. scan-service 消费 scan.requested
-        ├─ 幂等检查：scans 表以 scanId 为主键，已存在且非 FAILED → 直接 ack 跳过
-        ├─ 阶段 PARSING   → ManifestParser 解析成 DependencyGraph（节点 + 有向边）
-        ├─ 阶段 QUERYING  → 按 1000 个一批调用 OSV /v1/querybatch
-        │                   每批完成后发 scan.progress 事件
-        ├─ 阶段 ENRICHING → 对每个唯一漏洞 ID 取详情 /v1/vulns/{id}
-        │                   Redis 缓存 24h → 未命中再请求 → 落库 vulnerabilities
-        ├─ 阶段 DIFFING   → 与该项目上一次扫描比对，标记 new / resolved
-        ├─ 落库 scans / scan_dependencies / scan_edges / scan_findings
-        └─ 发 scan.completed + N 条 vuln.detected（仅新增的）
+ 3. scan-service consumes scan.requested
+        ├─ idempotency: scans.id is the primary key; if it exists and isn't FAILED → ack and skip
+        ├─ PARSING   → ManifestParser builds a DependencyGraph (nodes + directed edges)
+        ├─ QUERYING  → OSV /v1/querybatch in batches of ≤ 1000
+        │               a scan.progress event after every batch
+        ├─ ENRICHING → GET /v1/vulns/{id} for each unique vulnerability
+        │               Redis cache (24h) → miss → HTTP → persist to vulnerabilities table
+        ├─ DIFFING   → compare with the project's previous scan, mark new / resolved
+        ├─ persist scans / scan_dependencies / scan_edges / scan_findings
+        └─ publish scan.completed + N × vuln.detected (new findings only)
 
- 4. alert-service 消费三类事件
-        ├─ processed_events 表按 eventId 去重（at-least-once → 效果 exactly-once）
+ 4. alert-service consumes three event types
+        ├─ processed_events table deduplicates by eventId (at-least-once → exactly-once effect)
         ├─ scan.progress  → WebSocket  /topic/scans/{scanId}
-        ├─ vuln.detected  → 匹配用户 alert_rules(最低严重度) → 落库 alerts
+        ├─ vuln.detected  → match the user's alert_rules (min severity) → persist alert
         │                   → WebSocket /topic/users/{userId}/alerts
-        │                   → 可选 Webhook(Slack 格式) / Email(SES)
-        └─ scan.completed → 汇总告警
+        │                   → optional Slack-compatible webhook / email (SES)
+        └─ scan.completed → summary alert
 ```
 
-### 2.2 定时重扫（持续监控）
+### 2.2 Scheduled rescan (continuous monitoring)
 
-每天 03:00，scan-service 的 `RescanScheduler`（ShedLock 保证多实例只跑一个）：
-对每个项目的最新成功扫描，**不重新解析 manifest**，直接用已存的依赖列表重新查 OSV。
-OSV 每天都会新增漏洞，昨天干净的包今天可能就有 CVE——这就是"持续追踪"的价值。
-只对**新增**的漏洞发 `vuln.detected`。
+Every day at 03:00 the `RescanScheduler` in scan-service (ShedLock guarantees a single run across replicas)
+takes each project's latest successful scan and **re-queries OSV with the stored package list — no manifest re-parse**.
+OSV adds vulnerabilities every day; a package that was clean yesterday can have a CVE today. That is the whole point of "continuous tracking".
+Only **new** findings produce `vuln.detected` events.
 
 ---
 
-## 3. 关键技术决策（面试重点）
+## 3. Key design decisions (interview material)
 
-| 决策 | 选择 | 为什么 / 权衡 |
+| Decision | Choice | Why / trade-off |
 |---|---|---|
-| 服务间认证 | 网关校验 JWT，下游信任 `X-User-Id` 头 | 下游服务在私有子网，只有网关能访问；避免每个服务重复解 JWT。代价是必须保证下游不对公网暴露（安全组 / K8s NetworkPolicy），网关要**剥离**客户端伪造的 X-User-* 头 |
-| 服务发现 | 不用 Eureka，用 DNS | Docker Compose / ECS Service Connect / K8s Service 都自带 DNS 发现。Eureka 是在没有编排平台的年代的方案，加它只会多一个单点。面试时能解释清楚这点比"用了 Eureka"更加分 |
-| 事件可靠投递 | Transactional Outbox | 直接在业务事务里 `kafkaTemplate.send()` 会出现"DB 提交了但 Kafka 没发出去"或反之。Outbox 把事件当业务数据一起提交，再异步搬运，保证 at-least-once |
-| 消费幂等 | 业务主键 + processed_events 表 | Kafka 是 at-least-once，重平衡时会重复投递。scan-service 用 scanId 主键天然幂等；alert-service 用 eventId 去重表 |
-| 大文件传递 | 事件只带 storage key，不带内容 | package-lock.json 轻松几 MB，Kafka 默认消息上限 1 MB。用 S3 / 共享卷做"Claim Check"模式 |
-| 第三方 API 保护 | Resilience4j RateLimiter + Retry + CircuitBreaker | OSV 是公共免费服务，要礼貌调用；网络抖动要重试但要防止重试风暴（指数退避）；OSV 挂了要快速失败而不是拖垮线程池 |
-| 漏洞详情缓存 | Redis (24h TTL) + Postgres 持久化 | 同一个 lodash 漏洞会被几百个项目命中，Redis 挡掉重复请求；Postgres 让 UI 查历史不依赖 OSV 在线 |
-| 严重度计算 | 优先 GHSA `database_specific.severity`，否则自己算 CVSS 3.x 基础分 | OSV 返回的 `severity` 字段只有 CVSS 向量字符串，没有分数，必须自己实现 CVSS 3.1 公式 |
-| 依赖图存储 | 节点表 + 边表，路径按需 BFS | 一个 React 项目 1500 个节点 / 3000 条边很正常。存邻接表，"为什么我的项目里有这个包"按需计算最短路径，不预存所有路径 |
-| 定时任务 | ShedLock (JDBC) | 服务多实例部署时 `@Scheduled` 会每个实例都跑；ShedLock 用 DB 行锁做分布式锁，比引入 Quartz 集群轻得多 |
-| 实时推送 | STOMP over WebSocket，网关代理 | 浏览器 WebSocket 不能设自定义 header，JWT 通过 `?token=` 查询参数传，网关在握手阶段校验 |
-| 数据库 | database-per-service（同一 RDS 实例上 3 个库） | 保持服务边界清晰、各自迁移脚本独立；本地和低预算部署共享一个实例省钱 |
+| Service-to-service auth | Gateway verifies the JWT, downstream trusts `X-User-Id` | Downstream services live in a private subnet reachable only through the gateway; avoids re-parsing the JWT in every service. The cost: downstream must never be exposed publicly (security groups / NetworkPolicy) and the gateway **must strip** client-supplied X-User-* headers |
+| Service discovery | No Eureka — DNS | Docker Compose, ECS Service Connect and Kubernetes Services all provide DNS discovery. Eureka solves a problem from the pre-orchestrator era; adding it here would only add a single point of failure. Explaining this is worth more than "I used Eureka" |
+| Reliable event publishing | Transactional Outbox | Calling `kafkaTemplate.send()` inside a business transaction leads to "DB committed but Kafka not" or the reverse. The outbox stores the event as business data in the same transaction, then a poller ships it: at-least-once |
+| Consumer idempotency | Business key + processed_events table | Kafka is at-least-once; rebalances redeliver. scan-service is naturally idempotent on scanId; alert-service deduplicates by eventId |
+| Large payloads | Events carry only a storage key | A `package-lock.json` is easily several MB; Kafka's default max message size is 1 MB. Claim-Check pattern via S3 / shared volume |
+| Third-party API protection | Resilience4j RateLimiter + Retry + CircuitBreaker | OSV is a free public service — be polite; retry network blips with exponential backoff; fail fast when OSV is down instead of exhausting the thread pool |
+| Vulnerability detail caching | Redis (24h TTL) + Postgres persistence | The same lodash CVE is hit by hundreds of projects — Redis absorbs the repeats; Postgres lets the UI browse history without OSV being online |
+| Severity scoring | Prefer GHSA `database_specific.severity`, else compute CVSS 3.x base score | OSV's `severity` field contains only a CVSS vector string, no score — so the CVSS 3.1 formula is implemented in-house |
+| Dependency graph storage | Node table + edge table, paths via on-demand BFS | A React project with 1,500 nodes / 3,000 edges is normal. Store the adjacency list; compute "why is this package here" (shortest path) when asked |
+| Scheduling | ShedLock (JDBC) | With multiple replicas `@Scheduled` fires on each; ShedLock uses a DB row lock — far lighter than clustered Quartz |
+| Real-time push | STOMP over WebSocket, proxied by the gateway | Browsers can't set custom headers on WebSocket; the JWT goes in `?token=` and the gateway verifies it during the handshake |
+| Databases | database-per-service (3 databases on one RDS instance) | Clear service boundaries and independent migrations; one instance keeps local/budget deployments cheap |
 
 ---
 
-## 4. Kafka Topics 与事件
+## 4. Kafka topics and events
 
-| Topic | 生产者 | 消费者 | Key | 说明 |
+| Topic | Producer | Consumer | Key | Notes |
 |---|---|---|---|---|
-| `scan.requested` | project-service (outbox) | scan-service | projectId | 同一项目的扫描按序处理 |
-| `scan.progress` | scan-service | alert-service | scanId | 高频、允许丢（UI 进度条） |
-| `scan.completed` | scan-service | alert-service | projectId | 扫描汇总 |
-| `vuln.detected` | scan-service | alert-service | userId | 每条新发现一个事件 |
+| `scan.requested` | project-service (outbox) | scan-service | projectId | scans for one project are processed in order |
+| `scan.progress` | scan-service | alert-service | scanId | high-frequency, loss-tolerant (UI progress bar) |
+| `scan.completed` | scan-service | alert-service | projectId | scan summary |
+| `vuln.detected` | scan-service | alert-service | userId | one event per new finding |
 
-死信：每个消费者配置 `DefaultErrorHandler` + `DeadLetterPublishingRecoverer`，重试 3 次后进 `<topic>.DLT`。
+Dead letters: every consumer uses `DefaultErrorHandler` + `DeadLetterPublishingRecoverer`; after 3 retries the record goes to `<topic>.DLT`.
 
-事件类定义在 `backend/common/.../events/`，所有事件都带 `eventId`（UUID）和 `occurredAt`。
+Event classes live in `backend/common/.../events/`; every event carries an `eventId` (UUID) and `occurredAt`.
 
 ---
 
-## 5. 数据模型
+## 5. Data model
 
-### project-service（`depwatch_project`）
-- `users`：id, email(unique), password_hash(BCrypt), display_name
-- `projects`：id, owner_id, name, description — unique(owner_id, name)
-- `manifests`：id, project_id, file_name, storage_key, manifest_type, size_bytes, scan_id
-- `outbox_events`：id, aggregate_type, aggregate_id, event_type, topic, partition_key, payload(jsonb), published_at, attempts
+### project-service (`depwatch_project`)
+- `users`: id, email (unique), password_hash (BCrypt), display_name
+- `projects`: id, owner_id, name, description — unique(owner_id, name)
+- `manifests`: id, project_id, file_name, storage_key, manifest_type, size_bytes, scan_id
+- `outbox_events`: id, aggregate_type, aggregate_id, event_type, topic, partition_key, payload (jsonb), published_at, attempts
 
-### scan-service（`depwatch_scan`）
-- `scans`：id(=来自事件的 scanId), project_id, project_name, user_id, trigger(MANUAL/SCHEDULED), status, 各严重度计数, started_at, completed_at, error
-- `scan_dependencies`：scan_id, node_id("npm:lodash@4.17.15"), ecosystem, name, version, direct, depth
-- `scan_edges`：scan_id, parent_node_id, child_node_id
-- `vulnerabilities`：id(OSV id), summary, details, severity, cvss_score, cvss_vector, aliases(jsonb), references(jsonb), published, modified, raw(jsonb)
-- `scan_findings`：scan_id, node_id, vuln_id, fixed_version, is_new
+### scan-service (`depwatch_scan`)
+- `scans`: id (= scanId from the event), project_id, project_name, user_id, trigger (MANUAL/SCHEDULED), status, severity counts, started_at, completed_at, error
+- `scan_dependencies`: scan_id, node_id ("npm:lodash@4.17.15"), ecosystem, name, version, direct, depth
+- `scan_edges`: scan_id, parent_node_id, child_node_id
+- `vulnerabilities`: id (OSV id), summary, details, severity, cvss_score, cvss_vector, aliases (jsonb), references (jsonb), published, modified, raw (jsonb)
+- `scan_findings`: scan_id, node_id, vuln_id, fixed_version, is_new
 - `shedlock`
 
-### alert-service（`depwatch_alert`）
-- `alerts`：id, user_id, project_id, scan_id, vuln_id, severity, title, message, read_at
-- `alert_rules`：user_id(pk), min_severity, in_app, webhook_url, email
-- `processed_events`：event_id(pk), processed_at
+### alert-service (`depwatch_alert`)
+- `alerts`: id, user_id, project_id, scan_id, vuln_id, severity, title, message, read_at
+- `alert_rules`: user_id (pk), min_severity, in_app, webhook_url, notify_on_scan_complete
+- `processed_events`: event_id (pk), processed_at
 
 ---
 
-## 6. Manifest 解析器
+## 6. Manifest parsers
 
-`ManifestParser` 接口 + 三个实现，按文件名自动选择，可随时加 `requirements.txt` / `go.sum`：
+`ManifestParser` interface + three implementations, selected by file name; adding `requirements.txt` / `go.sum` is one new class:
 
-| 解析器 | 输入 | 传递依赖 | 实现要点 |
+| Parser | Input | Transitive | Key points |
 |---|---|---|---|
-| `NpmLockfileParser` | `package-lock.json` v2/v3 | ✅ 完整 | `packages` 是扁平 map，key 是 `node_modules/a/node_modules/b` 这种路径。边的解析要模拟 Node 的模块解析算法：从当前路径逐级向上找 `node_modules/<name>` |
-| `MavenTreeParser` | `mvn dependency:tree` 文本 | ✅ 完整 | 用缩进（每层 3 字符 `+- ` / `\- ` / `\|  `）+ 栈重建树 |
-| `MavenPomParser` | `pom.xml` | ❌ 仅直接依赖 | 要解析 `${property}` 占位符和 `<dependencyManagement>` 里的版本。真正的传递依赖要下载所有父 POM，所以推荐用户上传 dependency:tree |
+| `NpmLockfileParser` | `package-lock.json` v1/v2/v3 | ✅ full | `packages` is a flat map keyed by install path (`node_modules/a/node_modules/b`). Reconstructing edges means simulating Node's module resolution: walk up from the current path looking for `node_modules/<name>` |
+| `MavenTreeParser` | `mvn dependency:tree` text | ✅ full | Indentation (3 chars per level: `+- ` / `\- ` / `|  `) + a stack rebuilds the tree |
+| `MavenPomParser` | `pom.xml` | ❌ direct only | Resolves `${property}` placeholders and `<dependencyManagement>` versions; XXE-hardened. True transitive resolution would require downloading every parent POM, so users are pointed to dependency:tree |
 
-输出统一为 `DependencyGraph { root, nodes: Map<nodeId, Node>, edges: Map<parent, Set<child>> }`。
+All produce a `DependencyGraph { root, nodes: Map<nodeId, Node>, edges: Map<parent, Set<child>> }`.
 
 ---
 
-## 7. 模块结构
+## 7. Module layout
 
 ```
 depwatch/
 ├── backend/
-│   ├── pom.xml                 父 POM：统一版本、依赖管理
-│   ├── common/                 事件、Severity、UserContext 过滤器、ManifestStorage(Local/S3)、异常处理
+│   ├── pom.xml                 parent POM: versions, dependency management
+│   ├── common/                 events, Severity, UserContext filter, ManifestStorage (Local/S3), error handling
 │   ├── gateway/                Spring Cloud Gateway (WebFlux)
 │   ├── project-service/
 │   ├── scan-service/
 │   ├── alert-service/
-│   └── Dockerfile              多阶段构建，ARG MODULE 复用
+│   └── Dockerfile              multi-stage build, ARG MODULE reused by all services
 ├── frontend/                   Vite + React + TypeScript
 ├── infra/
-│   ├── docker/                 Postgres 初始化脚本、Nginx 配置
-│   └── aws/                    Terraform（低预算 EC2 方案）+ ECS 任务定义模板
+│   ├── docker/                 Postgres init script, Nginx config
+│   └── aws/                    Terraform (budget EC2 option) + ECS task-definition templates
 ├── scripts/                    check-env.sh / dev.sh / sample manifests
 ├── docker-compose.yml
 ├── .github/workflows/ci.yml
@@ -188,10 +188,10 @@ depwatch/
 
 ---
 
-## 8. 可以继续加深的方向（简历加分项）
+## 8. Where to take it next
 
-1. **SBOM 支持**：解析 CycloneDX / SPDX 格式（行业标准）。
-2. **许可证合规**：从 npm registry / Maven Central 拉 license，标记 GPL 传染风险。
-3. **GitHub App 集成**：安装到仓库后自动拉 lockfile，PR 上评论新引入的漏洞。
-4. **OpenTelemetry 全链路追踪**：一次上传跨 3 个服务 + Kafka，trace 串起来非常直观。
-5. **Kubernetes 部署**：Helm chart + HPA，scan-service 按 Kafka lag 自动扩容（KEDA）。
+1. **SBOM support**: parse CycloneDX / SPDX (industry standard).
+2. **License compliance**: pull licenses from the npm registry / Maven Central, flag GPL contamination.
+3. **GitHub App**: install on a repo, pull lockfiles automatically, comment on PRs that introduce vulnerabilities.
+4. **OpenTelemetry**: one upload crosses 3 services + Kafka; a distributed trace makes that visible.
+5. **Kubernetes**: Helm chart + HPA; scale scan-service on Kafka lag with KEDA.

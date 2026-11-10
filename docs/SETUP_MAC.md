@@ -1,18 +1,28 @@
-# 新 Mac 开发环境配置清单（Java 全栈 + AWS）
+# Dev Environment Setup for a New Mac (Java full-stack + AWS)
 
-按顺序装，整个过程大约 30–40 分钟。每一步后面都有验证命令。
-Apple Silicon（M1/M2/M3/M4）和 Intel 都适用。
+Follow in order; the whole thing takes 30–40 minutes. Each step ends with a verification command.
+Works on Apple Silicon (M1–M4) and Intel.
+
+[中文版](SETUP_MAC.zh-CN.md)
+
+> Everything in a code block is typed into **Terminal** (⌘ + Space → "Terminal", or Finder → Applications → Utilities).
+> Paste one command at a time and wait for it to finish. Don't paste the `#` comments.
 
 ---
 
-## 0. 基础：Xcode Command Line Tools + Homebrew
+## 0. Basics: Xcode Command Line Tools + Homebrew
 
 ```bash
-xcode-select --install          # 弹窗点"安装"，装 git / make / clang 等
+xcode-select --install
+```
+
+Click "Install" in the dialog. Then:
+
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-装完 Homebrew 后它会提示你把两行 `eval "$(/opt/homebrew/bin/brew shellenv)"` 加到 `~/.zprofile`，照做。
+It asks for your Mac login password (nothing is echoed while typing — that's normal). Newer installers add `brew` to your PATH automatically; if the final "Next steps" section shows two `eval "$(/opt/homebrew/bin/brew shellenv)"` lines, run them.
 
 ```bash
 brew --version
@@ -21,50 +31,53 @@ git --version
 
 ---
 
-## 1. Java：用 SDKMAN 管理（推荐），不要直接 brew install java
+## 1. Java: manage with SDKMAN (don't `brew install java` directly)
 
-SDKMAN 可以同时装多个 JDK 版本并随时切换，面试/工作中你迟早会遇到项目要 Java 17 而另一个要 21。
+SDKMAN lets you install several JDKs side by side and switch — you *will* hit a project that needs 17 while another needs 21.
+
+SDKMAN requires Bash 4+, and macOS ships Bash 3.2, so first:
 
 ```bash
-curl -s "https://get.sdkman.io" | bash
+brew install bash
+curl -s "https://get.sdkman.io" | /opt/homebrew/bin/bash
 source "$HOME/.sdkman/bin/sdkman-init.sh"
-
-sdk list java | grep -E "21\.|17\." | head      # 看可用版本
-sdk install java 21.0.5-tem                       # Eclipse Temurin 21（本项目用这个）
-sdk install maven 3.9.9
 ```
 
-验证：
+```bash
+sdk install java 21.0.5-tem     # Eclipse Temurin 21 (this project uses it); answer Y to "set as default"
+sdk install maven
+```
+
+Verify:
 
 ```bash
 java -version      # openjdk version "21.0.x"
-mvn -version       # Apache Maven 3.9.x, Java version: 21
+mvn -version       # Apache Maven 3.9+, Java version: 21
 ```
 
-> Gradle 本项目不需要。以后遇到 Gradle 项目用 `sdk install gradle` 即可。
+> Gradle isn't needed for this project; `sdk install gradle` when you meet one.
 
 ---
 
-## 2. Node.js：用 nvm 管理
+## 2. Node.js: manage with nvm
 
 ```bash
 brew install nvm
 mkdir -p ~/.nvm
 ```
 
-把下面加到 `~/.zshrc`：
+Append to `~/.zshrc` (paste all three lines together):
 
 ```bash
+cat >> ~/.zshrc <<'EOF'
 export NVM_DIR="$HOME/.nvm"
 [ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
+EOF
 ```
-
-然后：
 
 ```bash
 source ~/.zshrc
-nvm install --lts          # 目前是 Node 22
-nvm use --lts
+nvm install --lts
 node -v && npm -v
 ```
 
@@ -72,127 +85,142 @@ node -v && npm -v
 
 ## 3. Docker Desktop
 
-去 https://www.docker.com/products/docker-desktop/ 下载 **Apple Silicon** 或 Intel 版本安装。
-或者：
-
 ```bash
 brew install --cask docker
 ```
 
-启动 Docker Desktop 一次（它需要你授权），然后：
+**Don't open Docker until the install finishes** (`🍺 docker-desktop was successfully installed!`) — opening it mid-install makes Homebrew's final step fail and roll back. Then:
+
+```bash
+open -a Docker
+```
+
+First launch: authorize with your password, accept the terms, **skip** sign-in. If it reports "Rosetta installation failed", click **Disable Rosetta** — every image in this project is native arm64.
+
+Settings → **VM resources** → Memory ≥ **6 GB** (8 GB recommended; Kafka + Postgres + 4 JVMs).
 
 ```bash
 docker --version
-docker compose version     # 注意是 docker compose（v2），不是 docker-compose
+docker compose version        # note: "docker compose" (v2), not "docker-compose"
 docker run --rm hello-world
 ```
 
-设置 → Resources 把内存调到至少 6 GB（Kafka + Postgres + 4 个 Spring Boot 服务一起跑需要）。
-
-> 替代方案：如果 Docker Desktop 太重，可以用 OrbStack（`brew install --cask orbstack`），
-> 更快更省电，兼容 docker 命令。二选一即可。
+> Lighter alternative: OrbStack (`brew install --cask orbstack`) — faster, less battery, same `docker` CLI. Pick one.
 
 ---
 
-## 4. IDE
+## 4. IDEs
 
-**后端：IntelliJ IDEA Community**（免费，学生可申请 Ultimate）
+**Backend: IntelliJ IDEA Community** (free; students can get Ultimate)
 
 ```bash
 brew install --cask intellij-idea-ce
 ```
 
-必装插件：Lombok（虽然本项目没用，以后会遇到）、Docker、Kubernetes。
+Plugins: Lombok (not used here but you'll meet it), Docker, Kubernetes.
+If IntelliJ can't find the JDK: File → Project Structure → SDK → Add JDK → `~/.sdkman/candidates/java/current`.
 
-**前端：VS Code**
+**Frontend: VS Code**
 
 ```bash
 brew install --cask visual-studio-code
 ```
 
-插件：ESLint、Prettier、ES7+ React snippets、Docker、YAML。
+Extensions: ESLint, Prettier, ES7+ React snippets, Docker, YAML.
 
 ---
 
-## 5. 数据库 / 中间件客户端
+## 5. Database / middleware clients
 
 ```bash
-brew install --cask dbeaver-community    # 通用数据库 GUI，连 Postgres/MySQL 都行
-brew install postgresql@16               # 只为了有 psql 命令行工具，不需要启动服务
-brew install redis                       # 同理，只为 redis-cli
-brew install kcat                        # Kafka 命令行调试工具（原 kafkacat）
+brew install --cask dbeaver-community    # universal DB GUI (Postgres, MySQL, …)
+brew install postgresql@16               # just for the psql CLI; no need to start the service
+brew install redis                       # just for redis-cli
+brew install kcat                        # Kafka CLI debugging (formerly kafkacat)
 ```
 
-或者用 IntelliJ 自带的 Database 工具窗口。
+Or use IntelliJ's built-in Database tool window.
 
 ---
 
-## 6. API 调试
+## 6. API tooling
 
 ```bash
-brew install --cask postman       # 或者 bruno（开源、本地存储）：brew install --cask bruno
-brew install httpie               # 命令行：http GET localhost:8080/api/projects
-brew install jq                   # JSON 格式化
+brew install --cask postman       # or Bruno (open source, local-first): brew install --cask bruno
+brew install httpie               # CLI: http GET localhost:8080/api/projects
+brew install jq                   # JSON pretty-printing
 ```
 
 ---
 
-## 7. AWS 工具链
+## 7. AWS toolchain
 
 ```bash
 brew install awscli
 aws --version
 
-aws configure                      # 输入 Access Key / Secret / region（建议 us-east-1）/ json
-aws sts get-caller-identity        # 能返回你的 Account ID 就说明配置成功
+aws configure                      # Access Key / Secret / region (us-east-1 suggested) / json
+aws sts get-caller-identity        # returns your Account ID when configured correctly
 ```
 
-> 安全提醒：在 AWS 控制台先开 **Billing Alert**（预算 $10/月告警），再创建一个 IAM 用户给 CLI 用，
-> **不要用 root 账号的 Access Key**。
+> Security: set a **Billing Alert** first (budget of $10/month with email alerts), then create an IAM user for the CLI.
+> **Never use the root account's access key.**
 
-可选：
+Optional:
 
 ```bash
-brew install terraform             # 如果你想用 IaC 管理 AWS 资源（本项目提供 Terraform 示例）
-brew install kubectl               # 如果以后部署到 EKS
+brew install terraform             # IaC for AWS (this repo ships Terraform)
+brew install kubectl               # if you deploy to EKS later
 ```
 
 ---
 
-## 8. 其他好用的命令行工具
+## 8. Other handy CLI tools
 
 ```bash
-brew install gh          # GitHub CLI：gh repo create / gh pr create
-brew install tree        # 看目录结构
+brew install gh          # GitHub CLI: gh auth login / gh repo create / gh pr create
+brew install tree        # directory trees
 brew install wget
-brew install --cask iterm2    # 比自带 Terminal 好用
+brew install --cask iterm2    # nicer than the stock Terminal
 ```
 
-Git 全局配置：
+Git identity (use the email tied to your GitHub account, or your GitHub noreply address, so commits count toward your profile):
 
 ```bash
-git config --global user.name "你的名字"
-git config --global user.email "你的 GitHub 邮箱"
+git config --global user.name "Your Name"
+git config --global user.email "your-github-email"
 git config --global init.defaultBranch main
-ssh-keygen -t ed25519 -C "你的 GitHub 邮箱"      # 一路回车
-cat ~/.ssh/id_ed25519.pub                       # 复制到 GitHub → Settings → SSH keys
+ssh-keygen -t ed25519 -C "your-github-email"      # press Enter through the prompts
+cat ~/.ssh/id_ed25519.pub                         # paste into GitHub → Settings → SSH keys
 ```
 
----
-
-## 9. 一键验证脚本
-
-全部装完后运行项目根目录的 `scripts/check-env.sh`，它会逐项检查版本并告诉你缺什么。
+GitHub no longer accepts passwords for `git push`; run `gh auth login` once (browser flow) and it configures Git credentials for you.
 
 ---
 
-## 常见坑
+## 9. One-shot verification
 
-| 问题 | 解决 |
+From the project root:
+
+```bash
+scripts/check-env.sh
+```
+
+It checks every tool and version and tells you what's missing.
+
+---
+
+## Common pitfalls
+
+| Problem | Fix |
 |---|---|
-| `zsh: command not found: brew` | 没执行 `brew shellenv` 那两行，重开终端或 `source ~/.zprofile` |
-| Maven 下载依赖很慢 | 一般不需要换源，美国网络直连 Maven Central 很快；如果在国内可配阿里云镜像 |
-| Docker 启动报 "Cannot connect to the Docker daemon" | Docker Desktop 没启动，点开它等图标变绿 |
-| IntelliJ 识别不到 JDK | File → Project Structure → SDK → Add JDK → 选 `~/.sdkman/candidates/java/current` |
-| `npm install` 报 EACCES 权限错 | 说明没用 nvm 而是 brew 直接装的 node，卸掉改用 nvm |
-| Apple Silicon 上某个 Docker 镜像拉不下来 | 加 `platform: linux/amd64` 到 compose 的那个 service（本项目的镜像都有 arm64 版本，不需要） |
+| `zsh: command not found: brew` | The `brew shellenv` lines weren't run; reopen Terminal or `source ~/.zprofile` |
+| SDKMAN: "requires Bash 4 or higher" | `brew install bash`, then re-run the installer with `/opt/homebrew/bin/bash` (step 1) |
+| Spotlight can't find Terminal on a brand-new Mac | Index not built yet; Finder → Applications → Utilities → Terminal |
+| macOS 26 (Tahoe) has no Launchpad | Use Spotlight, Finder → Applications, or `open -a Docker` |
+| Docker: "Cannot connect to the Docker daemon" | Docker Desktop isn't running; open it and wait for the whale icon to settle |
+| `brew install --cask docker` fails with `xattr: Operation not permitted` | Docker.app was opened before the install finished; quit Docker and re-run the install |
+| Maven downloads are slow | Usually fine from the US; in China configure the Aliyun mirror |
+| `npm install` → EACCES permission error | Node was installed via brew instead of nvm; uninstall and use nvm |
+| A Docker image has no arm64 build | Add `platform: linux/amd64` to that service in compose (not needed for this project) |
+| `[Fatal Error] DOCTYPE is disallowed` during `mvn test` | Expected output from the XXE-protection test — not a failure |
